@@ -8,7 +8,7 @@
  ************************************************************/
 
 /* Al publicar un cambio: subir este número y el de version.json (deben ser iguales) */
-const VERSION = '0.10.0';
+const VERSION = '0.11.0';
 
 const CLAVE = 'cff.v1';
 const DIAS_PROGRAMA = 90;
@@ -19,7 +19,12 @@ const CAT_GASTO = {
   'Seguros': '🛡️', 'Salud': '🩺', 'Hijos': '🧒', 'Educación': '🎓', 'Diversión': '🎉',
   'Ropa': '👕', 'Suscripciones': '📺', 'Otros': '📦'
 };
-const CAT_INGRESO = { 'Salario': '💼', 'Negocio': '🏪', 'Extra': '✨', 'Otros': '💵' };
+const CAT_INGRESO = {
+  'Salario': '💼', 'Negocio': '🏪', 'Renta': '🏘️', 'Inversiones': '📈',
+  'Pasivo': '🌱', 'Extra': '✨', 'Otros': '💵'
+};
+/* Ingresos que llegan sin trabajar activamente por ellos */
+const CAT_PASIVO = ['Renta', 'Inversiones', 'Pasivo'];
 const TIPO_CUENTA = { 'Efectivo': '💵', 'Banco': '🏦', 'Ahorros': '🐖', 'Negocio': '🏪', 'Otra': '📁' };
 const EMOCIONES = ['Ansiedad', 'Miedo', 'Culpa', 'Vergüenza', 'Presión', 'Desconexión', 'Deseo', 'Ambición', 'Crecimiento', 'Esperanza', 'Otra'];
 
@@ -102,7 +107,7 @@ const nuevoEstado = () => ({
   v: 1,
   perfil: {
     nombre: '', moneda: '$', inicio: '', metodo: '', extra: 0, sinDeudas: false,
-    instalarLuego: '', ultimoRespaldo: '', ultimaCuenta: '',
+    instalarLuego: '', ultimoRespaldo: '', ultimaCuenta: '', correo: '', saludoDia: '',
     negocio: '', vista: 'todo', extraPersonal: 0, extraNegocio: 0
   },
   mov: [],      // {id, tipo:'gasto'|'ingreso', monto, cat, nota, fecha, fuga, cuenta, fijoId, foto, ambito}
@@ -675,8 +680,8 @@ const RETOS = [
  * NAVEGACIÓN
  ************************************************************/
 
-const TITULOS = { inicio: 'Inicio', deudas: 'Deudas', ahorros: 'Ahorros', retos: 'Retos semanales' };
-const VISTAS = { inicio: vistaInicio, deudas: vistaDeudas, ahorros: vistaAhorros, retos: vistaRetos };
+const TITULOS = { inicio: 'Inicio', ingresos: 'Ingresos', deudas: 'Deudas', ahorros: 'Ahorros', retos: 'Retos' };
+const VISTAS = { inicio: vistaInicio, ingresos: vistaIngresos, deudas: vistaDeudas, ahorros: vistaAhorros, retos: vistaRetos };
 
 function ir(v) {
   vistaActual = v;
@@ -684,12 +689,20 @@ function ir(v) {
   pintar();
 }
 
+/* Saludo según la hora, como en la app del banco */
+function saludo() {
+  const h = new Date().getHours();
+  return h >= 5 && h < 12 ? 'Buenos días' : h >= 12 && h < 19 ? 'Buenas tardes' : 'Buenas noches';
+}
+const primerNombre = () => String(S.perfil.nombre || '').trim().split(/\s+/)[0];
+const correoValido = c => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(c || '').trim());
+
 function pintar() {
   const p = programa();
   $('#titulo').textContent = TITULOS[vistaActual];
-  $('#hola').textContent =
-    (S.perfil.nombre ? 'Hola, ' + S.perfil.nombre + ' · ' : '') +
-    (p.terminado ? '90 días cumplidos' : 'Día ' + p.dia + ' de ' + DIAS_PROGRAMA);
+  $('#hola').innerHTML =
+    `<b>${esc(saludo())}${primerNombre() ? ', ' + esc(primerNombre()) : ''}</b> <span class="dia">` +
+    (p.terminado ? '90 días cumplidos' : 'Día ' + p.dia + ' de ' + DIAS_PROGRAMA) + '</span>';
   document.querySelectorAll('#tabs [data-ir]').forEach(b =>
     b.classList.toggle('activo', b.dataset.ir === vistaActual));
   $('#vista').innerHTML = VISTAS[vistaActual]();
@@ -739,7 +752,7 @@ function vistaInicio() {
   let mensaje = 'Vas en positivo este mes. Decide a dónde va lo que te queda.';
   if (!r.ingresos && !r.gastos) {
     color = 'blue';
-    mensaje = 'Toca el botón verde (+) para registrar tu primer ingreso o gasto.';
+    mensaje = 'Toca el botón + para registrar tu primer ingreso o gasto.';
   } else if (r.queda < 0) {
     color = 'red';
     mensaje = 'Este mes ha salido más de lo que ha entrado.';
@@ -753,33 +766,10 @@ function vistaInicio() {
 
   let h = tarjetaActualizar() + tarjetaInstalar() + tarjetaRespaldo() + selectorVista();
 
-  const pendientes = esteMes ? fijosV().filter(f => !fijoHecho(f)) : [];
-  const porPagar = suma(pendientes.filter(f => f.tipo === 'gasto'), f => f.monto);
-  const porEntrar = suma(pendientes.filter(f => f.tipo === 'ingreso'), f => f.monto);
-  const alFinal = r.queda + porEntrar - porPagar;
-
-  h += `
-  <div class="card semaforo ${color}">
-    <div class="fila">
-      <span class="muted chico">Te queda${conNegocio() && vistaElegida() !== 'todo' ? ' · ' + esc(etiquetaVista()) : ''}</span>
-      <div class="mes">
-        <button data-a="mes" data-id="-1" aria-label="Mes anterior">‹</button>
-        <b>${esc(nombreMes(mesVer))}</b>
-        <button data-a="mes" data-id="1" aria-label="Mes siguiente" ${esteMes ? 'disabled' : ''}>›</button>
-      </div>
-    </div>
-    <p class="grande ${r.queda < 0 ? 'rojo' : ''}">${dinero(r.queda)}</p>
-    <p class="chico muted" style="margin:0">${esc(mensaje)}</p>
-    ${porPagar || porEntrar ? `
-      <p class="chico" style="margin:8px 0 0">Faltan fijos${porEntrar ? ' por entrar ' + dinero(porEntrar) : ''}${porEntrar && porPagar ? ' y' : ''}${porPagar ? ' por pagar ' + dinero(porPagar) : ''}.
-      Al final te quedarían <b class="${alFinal < 0 ? 'rojo' : ''}">${dinero(alFinal)}</b>.</p>` : ''}
-    <div class="cuatro">
-      <div class="dato"><span>Ingresos</span><b class="verde">${dinero(r.ingresos)}</b></div>
-      <div class="dato"><span>Gastos</span><b>${dinero(r.gastos)}</b></div>
-      <div class="dato"><span>Pagado a deudas</span><b>${dinero(r.pagos)}</b></div>
-      <div class="dato"><span>Ahorrado</span><b>${dinero(r.aportes)}</b></div>
-    </div>
-  </div>`;
+  /* Disponible para gastar (siempre el mes en curso) */
+  h += `<div class="seccion"><h2>Disponible para gastar</h2>
+    <button class="icono" data-a="ir" data-id="ingresos" aria-label="Ver ingresos"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h18l-7 8v6l-4 2v-8z"/></svg></button>
+  </div>` + tarjetaDisponible();
 
   const promos = esteMes ? promosPorVencer(120) : [];
   if (promos.length) {
@@ -790,6 +780,28 @@ function vistaInicio() {
         No le cargues nada nuevo y define cómo la vas a pagar antes de esa fecha.</li>`).join('')}</ul>
     </div>`;
   }
+
+  h += seccionProximo();
+
+  /* Resumen del mes elegido */
+  h += `<div class="seccion"><h2>Este mes</h2>
+      <div class="mes">
+        <button data-a="mes" data-id="-1" aria-label="Mes anterior">‹</button>
+        <b>${esc(nombreMes(mesVer))}</b>
+        <button data-a="mes" data-id="1" aria-label="Mes siguiente" ${esteMes ? 'disabled' : ''}>›</button>
+      </div>
+    </div>
+  <div class="card semaforo ${color}">
+    <span class="muted chico">Te queda${conNegocio() && vistaElegida() !== 'todo' ? ' · ' + esc(etiquetaVista()) : ''}</span>
+    <p class="grande ${r.queda < 0 ? 'rojo' : ''}">${dinero(r.queda)}</p>
+    <p class="chico muted" style="margin:0">${esc(mensaje)}</p>
+    <div class="cuatro">
+      <div class="dato"><span>Ingresos</span><b class="verde">${dinero(r.ingresos)}</b></div>
+      <div class="dato"><span>Gastos</span><b>${dinero(r.gastos)}</b></div>
+      <div class="dato"><span>Pagado a deudas</span><b>${dinero(r.pagos)}</b></div>
+      <div class="dato"><span>Ahorrado</span><b>${dinero(r.aportes)}</b></div>
+    </div>
+  </div>`;
 
   if (esteMes && vistaElegida() === 'todo') h += tarjetaPanorama();
 
@@ -802,19 +814,6 @@ function vistaInicio() {
       <p>${esc(reto.texto)}</p>
       <div class="botones"><button class="btn chico ${hecho ? '' : 'principal'}" data-a="verRetos">${hecho ? 'Ver todos los retos' : 'Ir al reto'}</button></div>
     </div>`;
-  }
-
-  const prox = proximosPagos();
-  if (prox.length) {
-    h += `<div class="card"><h2>Pagos que vienen</h2><ul class="lista">` +
-      prox.map(d => `
-        <li>
-          <span class="punto">📅</span>
-          <span class="txt"><b>${esc(d.nombre)}</b>
-            <span>${d.faltan === 0 ? 'Vence hoy' : d.faltan === 1 ? 'Vence mañana' : 'Vence en ' + d.faltan + ' días'} · mínimo ${dinero(d.minimo)}</span></span>
-          <button class="btn chico" data-a="pagar" data-id="${d.id}">Pagar</button>
-        </li>`).join('') +
-      `</ul></div>`;
   }
 
   if (esteMes) h += tarjetaFijos() + tarjetaDinero();
@@ -847,6 +846,166 @@ function vistaInicio() {
   h += `</div>`;
 
   h += `<p class="legal">Herramienta educativa. No es asesoría financiera, legal ni fiscal.<br>Tus datos se guardan solo en este teléfono.</p>`;
+  return h;
+}
+
+ACC.ir = id => { cerrarHoja(); ir(id); };
+
+/* Próxima fecha en que entra un ingreso fijo */
+function proximoIngreso() {
+  const lista = fijosV().filter(f => f.tipo === 'ingreso' && f.dia && f.monto > 0)
+    .map(f => ({ ...f, faltan: diasParaDia(f.dia) }))
+    .sort((a, b) => a.faltan - b.faltan);
+  return lista[0] || null;
+}
+
+/* Mínimos de deudas que todavía faltan por pagar este mes */
+function minimosPendientes() {
+  const dHoy = new Date().getDate();
+  const hace20 = sumarDias(hoy(), -20);
+  return suma(deudasV().filter(d => d.saldo > 0 && d.minimo > 0 && d.dia >= dHoy &&
+    !S.pagos.some(p => p.deudaId === d.id && p.fecha >= hace20)), d => d.minimo);
+}
+
+function anillo(pctValor, centro, rojo) {
+  const R = 54, C = 2 * Math.PI * R;
+  const off = C * (1 - Math.max(0, Math.min(1, pctValor)));
+  return `<div class="anillo">
+    <svg viewBox="0 0 128 128"><circle class="pista" cx="64" cy="64" r="${R}"/>
+      <circle class="valor ${rojo ? 'rojo' : ''}" cx="64" cy="64" r="${R}" stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}"/></svg>
+    <div class="centro">${centro}</div>
+  </div>`;
+}
+
+function tarjetaDisponible() {
+  const rA = resumen(mesActual());
+  const hayCuentas = cuentasV().length > 0;
+  const pendientes = fijosV().filter(f => !fijoHecho(f));
+  const porEntrar = suma(pendientes.filter(f => f.tipo === 'ingreso'), f => f.monto);
+  const porPagar = suma(pendientes.filter(f => f.tipo === 'gasto'), f => f.monto);
+  const gastadoCasa = suma(rA.lista.filter(x => x.k === 'mov' && x.tipo === 'gasto' && ambitoDe(x) === 'personal'), x => x.monto);
+  const casaRestante = vistaElegida() !== 'negocio' ? Math.max(0, presupuestoTotal() - gastadoCasa) : 0;
+
+  const base = hayCuentas ? dineroEnCuentas() : rA.queda;
+  const proyectado = base + porEntrar;
+  const gasto = porPagar + minimosPendientes() + casaRestante;
+  const restante = r2(proyectado - gasto);
+  const ok = restante >= 0;
+
+  const prox = proximoIngreso();
+  const pastilla = prox
+    ? `Antes del día de pago ${esc(fechaCorta(sumarDias(hoy(), prox.faltan)))}`
+    : 'Agrega tus ingresos para proyectar';
+
+  return `<div class="card hero">
+    <div class="cuerpo">
+      <div class="cifras">
+        <div><span>${hayCuentas ? 'Balance actual' : 'Te queda este mes'}</span><b>${dinero(base)}</b></div>
+        <div><span>Balance proyectado</span><b>${dinero(proyectado)}</b></div>
+        <div><span>Gasto proyectado</span><b>${dinero(gasto)}</b></div>
+      </div>
+      ${anillo(proyectado > 0 ? restante / proyectado : 0,
+        `<span class="ok ${ok ? '' : 'mal'}">${ok ? '✓' : '!'}</span><b class="${ok ? '' : 'rojo'}">${dinero(restante)}</b><small>Restante</small>`, !ok)}
+    </div>
+    <button class="pastilla" data-a="ir" data-id="ingresos">${pastilla}</button>
+    ${!hayCuentas ? '<p class="ayuda centro" style="margin-top:10px">Sube el estado de cuenta de tus bancos para ver tu balance real.</p>' : ''}
+  </div>`;
+}
+
+function seccionProximo() {
+  const deudas = proximosPagos().map(d => ({
+    id: d.id, tipo: 'deuda', nombre: d.nombre, monto: d.minimo, faltan: d.faltan
+  }));
+  const fijos = fijosV().filter(f => f.tipo === 'gasto' && !fijoHecho(f) && f.dia)
+    .map(f => ({ id: f.id, tipo: 'fijo', nombre: f.nombre, monto: f.monto, faltan: diasParaDia(f.dia) }))
+    .filter(f => f.faltan !== null && f.faltan <= 7);
+  const lista = [...deudas, ...fijos].sort((a, b) => a.faltan - b.faltan);
+  const cuando = n => n === 0 ? 'Vence hoy' : n === 1 ? 'Vence mañana' : 'Vence en ' + n + ' días';
+
+  let h = `<div class="seccion"><h2>Próximo</h2>
+    <button class="icono" data-a="ir" data-id="deudas" aria-label="Ver deudas"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/></svg></button>
+  </div>`;
+  if (!lista.length) {
+    return h + `<div class="listo"><div class="circulo"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div><p>¡Todo pagado!</p></div>`;
+  }
+  return h + `<div class="card"><ul class="lista">` + lista.map(x => `
+    <li>
+      <span class="punto">${x.tipo === 'deuda' ? '💳' : '📅'}</span>
+      <span class="txt"><b>${esc(x.nombre)}</b><span>${cuando(x.faltan)} · ${x.tipo === 'deuda' ? 'mínimo ' : ''}${dinero(x.monto)}</span></span>
+      <button class="btn chico" data-a="${x.tipo === 'deuda' ? 'pagar' : 'fijoHecho'}" data-id="${x.id}">${x.tipo === 'deuda' ? 'Pagar' : 'Listo'}</button>
+    </li>`).join('') + `</ul></div>`;
+}
+
+
+/************************************************************
+ * VISTA: INGRESOS (todas las fuentes, sumadas)
+ ************************************************************/
+
+function vistaIngresos() {
+  const r = resumen(mesVer);
+  const esteMes = mesVer === mesActual();
+  const fijos = fijosV().filter(f => f.tipo === 'ingreso');
+  const recibidos = r.lista.filter(x => x.k === 'mov' && x.tipo === 'ingreso');
+  const esperado = suma(fijos, f => f.monto);
+  const recibido = suma(recibidos, x => x.monto);
+  const pasivoFijo = suma(fijos.filter(f => CAT_PASIVO.includes(f.cat)), f => f.monto);
+  const pasivoRec = suma(recibidos.filter(x => CAT_PASIVO.includes(x.cat)), x => x.monto);
+
+  let h = selectorVista();
+
+  h += `<div class="seccion"><h2>Resumen</h2>
+      <div class="mes">
+        <button data-a="mes" data-id="-1" aria-label="Mes anterior">‹</button>
+        <b>${esc(nombreMes(mesVer))}</b>
+        <button data-a="mes" data-id="1" aria-label="Mes siguiente" ${esteMes ? 'disabled' : ''}>›</button>
+      </div>
+    </div>
+  <div class="card hero">
+    <div class="cuerpo">
+      <div class="cifras">
+        <div><span>Esperado al mes (fijos)</span><b>${dinero(esperado)}</b></div>
+        <div><span>Recibido este mes</span><b class="verde">${dinero(recibido)}</b></div>
+        <div><span>Ingreso pasivo</span><b>${dinero(Math.max(pasivoFijo, pasivoRec))}</b></div>
+      </div>
+      ${anillo(esperado > 0 ? recibido / esperado : (recibido > 0 ? 1 : 0),
+        `<b>${esperado > 0 ? Math.round(pct(recibido, esperado)) + '%' : dinero(recibido)}</b><small>${esperado > 0 ? 'recibido' : 'este mes'}</small>`)}
+    </div>
+    <div class="botones">
+      <button class="btn chico principal" data-a="nuevoFijoIngreso">+ Fuente de ingreso</button>
+      <button class="btn chico" data-a="regIngreso">+ Registrar cobro</button>
+    </div>
+  </div>`;
+
+  /* Fuentes fijas, agrupadas por tipo */
+  h += `<div class="seccion"><h2>Fuentes de ingreso</h2></div><div class="card">`;
+  if (!fijos.length) {
+    h += `<p class="chico muted" style="margin:0">Agrega cada fuente de dinero que entra cada mes: salario, negocio, rentas, inversiones, ingresos pasivos o extras. La app las suma y te dice cuánto debería entrar.</p>`;
+  } else {
+    const porCat = {};
+    fijos.forEach(f => { (porCat[f.cat] = porCat[f.cat] || []).push(f); });
+    h += Object.keys(CAT_INGRESO).filter(c => porCat[c]).map(c => `
+      <div class="fila" style="margin:4px 0 2px"><b>${CAT_INGRESO[c]} ${esc(c)}${CAT_PASIVO.includes(c) ? ' <span class="etiqueta green">pasivo</span>' : ''}</b><b class="verde">${dinero(suma(porCat[c], f => f.monto))}</b></div>
+      <ul class="lista" style="margin-bottom:8px">` + porCat[c].map(f => `
+        <li><button class="fila-btn" data-a="editarFijo" data-id="${f.id}">
+          <span class="punto">${CAT_INGRESO[f.cat] || '💵'}</span>
+          <span class="txt"><b>${esc(f.nombre)}${conNegocio() && vistaElegida() === 'todo' && ambitoDe(f) === 'negocio' ? ' <span class="etiqueta blue">🏢</span>' : ''}</b>
+            <span>${f.dia ? 'Día ' + f.dia : 'Sin día fijo'}${esteMes ? (fijoHecho(f) ? ' · ✓ ya entró' : ' · pendiente') : ''}</span></span>
+          <span class="monto verde">+${dinero(f.monto)}</span>
+        </button></li>`).join('') + `</ul>`).join('');
+    h += `<div class="fila" style="border-top:1px solid var(--border);padding-top:12px"><b>Total al mes</b><b class="verde" style="font-size:20px">${dinero(esperado)}</b></div>`;
+    if (pasivoFijo > 0) h += `<p class="ayuda">De eso, <b>${dinero(pasivoFijo)}</b> (${Math.round(pct(pasivoFijo, esperado))}%) es ingreso pasivo.</p>`;
+  }
+  h += `</div>`;
+
+  /* Cobros registrados en el mes */
+  h += `<div class="seccion"><h2>Cobros de ${esc(nombreMes(mesVer).split(' ')[0].toLowerCase())}</h2></div><div class="card">`;
+  h += recibidos.length
+    ? `<ul class="lista">` + recibidos.map(x => filaMov(x)).join('') + `</ul>
+       <div class="fila" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px"><b>Total recibido</b><b class="verde" style="font-size:20px">${dinero(recibido)}</b></div>`
+    : `<div class="vacio"><span class="emo">💵</span>Todavía no registras cobros este mes. Cuando entre un fijo tócalo en Inicio ("Ya entró") o usa "+ Registrar cobro".</div>`;
+  h += `</div>`;
+
+  if (vistaElegida() !== 'personal' && conNegocio()) h += tarjetaPyG();
   return h;
 }
 
@@ -2168,44 +2327,72 @@ function formulario({ titulo, ayuda, campos, valores = {}, guardar: alGuardar, b
  * AJUSTES, RESPALDO Y COMPARTIR
  ************************************************************/
 
+const ICO = {
+  persona: '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+  casa: '<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/>',
+  ingresos: '<path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/>',
+  banco: '<path d="M3 10l9-6 9 6"/><path d="M5 10v8M9 10v8M15 10v8M19 10v8M3 21h18"/>',
+  pyg: '<path d="M21 12a9 9 0 1 1-9-9v9z"/><path d="M14 3.3A9 9 0 0 1 20.7 10H14z"/>',
+  bajar: '<path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 21h14"/>',
+  subir: '<path d="M12 21V9M7 14l5-5 5 5"/><path d="M5 3h14"/>',
+  compartir: '<path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/><path d="M16 6l-4-4-4 4M12 2v14"/>',
+  actualizar: '<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>',
+  escudo: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
+  borrar: '<path d="M3 6h18M8 6V4h8v2M6 6l1 15h10l1-15"/>'
+};
+const tile = (ic, color = '') => `<span class="tile ${color}"><svg viewBox="0 0 24 24">${ICO[ic]}</svg></span>`;
+const filaAjuste = ({ a, id, ic, color, titulo, sub, attrs = '' }) => `
+  <button class="ajuste" ${a ? `data-a="${a}"` : ''} ${id ? `data-id="${id}"` : ''} ${attrs}>
+    ${tile(ic, color)}<span class="txt"><b>${titulo}</b>${sub ? `<span>${sub}</span>` : ''}</span><span class="flecha">›</span>
+  </button>`;
+
 function abrirAjustes() {
   const ultimo = S.perfil.ultimoRespaldo;
   hoja(`
     ${cabecera('Ajustes')}
-    <form id="formAjustes" novalidate>
-      <label class="campo"><span>Tu nombre</span><input type="text" name="nombre" value="${esc(S.perfil.nombre)}" maxlength="40"></label>
+
+    <p class="grupo-titulo">Mi perfil</p>
+    <form id="formAjustes" class="grupo" novalidate>
+      <label class="campo"><span>Tu nombre</span><input type="text" name="nombre" value="${esc(S.perfil.nombre)}" maxlength="40" autocomplete="name"></label>
+      <label class="campo"><span>Tu correo</span><input type="email" name="correo" value="${esc(S.perfil.correo || '')}" maxlength="80" placeholder="tu@correo.com" autocomplete="email" inputmode="email"></label>
+      <p class="ayuda" style="margin:-8px 16px 12px">Para enviarte recordatorios de pagos en el futuro. Por ahora se guarda solo en este teléfono y no se envía a ningún lado.</p>
+      <label class="campo"><span>Nombre de tu negocio (opcional)</span><input type="text" name="negocio" value="${esc(S.perfil.negocio)}" maxlength="40" placeholder="Ej. Mi Empresa LLC"></label>
       <label class="campo"><span>Símbolo de moneda</span><input type="text" name="moneda" value="${esc(S.perfil.moneda)}" maxlength="4"></label>
       <label class="campo"><span>Día en que empezaste los 90 días</span><input type="date" name="inicio" value="${esc(S.perfil.inicio)}" max="${hoy()}"></label>
-      <label class="campo"><span>Nombre de tu negocio (opcional)</span><input type="text" name="negocio" value="${esc(S.perfil.negocio)}" maxlength="40" placeholder="Ej. Mi Empresa LLC"></label>
-      <p class="ayuda" style="margin-top:-4px">Si tienes negocio, escríbelo aquí. Así puedes separar tus tarjetas, cuentas e ingresos en Personal y Negocio, y ver los dos panoramas.</p>
-      <div class="botones"><button type="submit" class="btn principal">Guardar</button></div>
+      <div class="campo"><button type="submit" class="btn principal ancho">Guardar perfil</button>
+        <p class="ayuda">Si escribes el nombre de tu negocio, puedes separar todo en Personal y Negocio y ver los dos panoramas.</p></div>
     </form>
 
-    <h2 style="margin-top:22px">Compartir</h2>
-    <p class="ayuda">Envía el enlace a quien quieras. Cada persona tiene sus propios datos en su teléfono; nadie ve los tuyos.</p>
-    <div class="botones"><button class="btn" data-a="compartir">📤 Compartir la app</button></div>
+    <p class="grupo-titulo">General</p>
+    <div class="grupo">
+      ${filaAjuste({ a: 'ir', id: 'ingresos', ic: 'ingresos', titulo: 'Ingresos', sub: 'Fuentes de ingreso y cobros del mes' })}
+      ${filaAjuste({ a: 'editarPresupuesto', ic: 'casa', titulo: 'Presupuesto de la casa', sub: presupuestoTotal() ? dinero(presupuestoTotal()) + ' al mes' : 'Sin definir' })}
+      ${filaAjuste({ a: 'subirEstado', ic: 'banco', titulo: 'Estados de cuenta', sub: S.cuentas.length ? S.cuentas.length + (S.cuentas.length === 1 ? ' cuenta' : ' cuentas') + ' · ' + dinero(suma(S.cuentas, c => c.saldo)) : 'Actualiza el saldo de tus bancos' })}
+      ${conNegocio() ? filaAjuste({ a: 'subirPyG', ic: 'pyg', titulo: 'P&L del negocio', sub: S.pyg.length ? S.pyg.length + ' periodo(s) registrados' : 'Sube el estado de resultados' }) : ''}
+    </div>
 
-    <h2 style="margin-top:22px">Respaldo</h2>
-    <p class="ayuda">Tus datos viven solo en este teléfono. Guarda una copia cada semana y antes de cambiar de teléfono. ${ultimo ? 'Última copia: ' + esc(fechaCorta(ultimo)) + '.' : 'Todavía no has guardado ninguna.'}</p>
-    <div class="botones">
-      <button class="btn" data-a="respaldar">⬇️ Guardar copia</button>
-      <button class="btn" data-a="restaurar">⬆️ Recuperar copia</button>
+    <p class="grupo-titulo">Herramientas de datos</p>
+    <div class="grupo">
+      ${filaAjuste({ a: 'respaldar', ic: 'bajar', color: 'verde', titulo: 'Guardar copia', sub: ultimo ? 'Última copia: ' + esc(fechaCorta(ultimo)) : 'Todavía no has guardado ninguna' })}
+      ${filaAjuste({ a: 'restaurar', ic: 'subir', titulo: 'Recuperar copia', sub: 'Carga un archivo de respaldo (.json)' })}
+      ${filaAjuste({ a: 'compartir', ic: 'compartir', titulo: 'Compartir la app', sub: 'Cada persona tiene sus propios datos' })}
     </div>
     <input type="file" id="archivo" accept="application/json,.json" hidden>
 
-    <h2 style="margin-top:22px">Versión</h2>
-    <p class="ayuda">Tienes la versión ${VERSION} (beta).${versionNueva ? ' Hay una más nueva: ' + esc(versionNueva) + '.' : ''}</p>
-    <div class="botones"><button class="btn" data-a="${versionNueva ? 'actualizar' : 'buscarVersion'}">${versionNueva ? 'Actualizar ahora' : 'Buscar actualización'}</button></div>
+    <p class="grupo-titulo">App</p>
+    <div class="grupo">
+      ${filaAjuste({ a: versionNueva ? 'actualizar' : 'buscarVersion', ic: 'actualizar', color: versionNueva ? 'amarillo' : '', titulo: versionNueva ? 'Actualizar a ' + esc(versionNueva) : 'Buscar actualización', sub: 'Tienes la versión ' + VERSION })}
+      ${filaAjuste({ ic: 'escudo', titulo: 'Privacidad', sub: 'Tus datos se guardan solo en este teléfono', attrs: 'type="button" onclick="document.getElementById(\'avisoLegal\').hidden=false"' })}
+      ${filaAjuste({ ic: 'borrar', color: 'rojo', titulo: 'Borrar todos mis datos', sub: 'No se puede deshacer', attrs: 'id="btnBorrarTodo" type="button"' }).replace('class="ajuste"', 'class="ajuste peligro"')}
+    </div>
 
-    <h2 style="margin-top:22px">Empezar de cero</h2>
-    <div class="botones"><button class="btn peligro" id="btnBorrarTodo">Borrar todos mis datos</button></div>
-
-    <p class="legal" style="text-align:left;margin:22px 0 0">
+    <p class="legal" id="avisoLegal" hidden style="text-align:left;margin:16px 4px 0">
       <b>Aviso.</b> Control Financiero Familiar es una herramienta educativa de La Tribu Los Inquebrantables para organizar tus propios números.
       No es asesoría financiera, legal, fiscal ni de inversión, y no garantiza resultados. Las estimaciones dependen de los datos que tú registras.
       Para decisiones importantes consulta a un profesional autorizado.<br><br>
       <b>Privacidad.</b> Lo que escribes y las fotos de tus facturas se guardan únicamente en este dispositivo. No se envían a ningún servidor y nadie más puede verlos.
       La app no se conecta con tu banco. De tus tarjetas y cuentas solo guarda los últimos 4 números: nunca escribas números completos, contraseñas ni claves.
+      Los estados de cuenta y P&L que subes se leen en el teléfono y no se guardan; solo quedan los números que confirmas.
       La copia de respaldo contiene todos tus datos; guárdala en un lugar que solo tú controles.
     </p>`);
 
@@ -2213,6 +2400,9 @@ function abrirAjustes() {
     e.preventDefault();
     const f = e.target.elements;
     S.perfil.nombre = f.nombre.value.trim();
+    const correo = f.correo.value.trim();
+    if (correo && !correoValido(correo)) { f.correo.focus(); aviso('Revisa el correo: parece incompleto'); return; }
+    S.perfil.correo = correo.toLowerCase();
     S.perfil.moneda = f.moneda.value.trim() || '$';
     if (f.inicio.value) S.perfil.inicio = f.inicio.value;
     S.perfil.negocio = f.negocio.value.trim();
@@ -2223,7 +2413,7 @@ function abrirAjustes() {
   $('#btnBorrarTodo').addEventListener('click', e => {
     if (!confirmado) {
       confirmado = true;
-      e.target.textContent = 'Se borra todo y no se puede deshacer. Toca otra vez';
+      e.currentTarget.querySelector('.txt b').textContent = 'Se borra todo. Toca otra vez para confirmar';
       return;
     }
     localStorage.removeItem(CLAVE);
@@ -2375,11 +2565,15 @@ function bienvenida() {
   formulario({
     titulo: 'Bienvenido 👋',
     ayuda: 'Aquí llevas tus gastos, ingresos, deudas y ahorros, con un reto cada semana durante 90 días. Todo se guarda solo en tu teléfono.',
-    campos: [{ n: 'nombre', t: 'texto', l: '¿Cómo te llamas?', ph: 'Tu nombre' }],
+    campos: [
+      { n: 'nombre', t: 'texto', l: '¿Cómo te llamas?', ph: 'Tu nombre' },
+      { n: 'correo', t: 'texto', l: 'Tu correo (opcional, para recordatorios)', ph: 'tu@correo.com' }
+    ],
     texto: 'Empezar mis 90 días',
     sinCerrar: true,
     guardar: v => {
       S.perfil.nombre = v.nombre;
+      S.perfil.correo = correoValido(v.correo) ? v.correo.trim().toLowerCase() : '';
       S.perfil.inicio = hoy();
     }
   });
@@ -2392,6 +2586,12 @@ function bienvenida() {
 
 pintar();
 if (!S.perfil.inicio) bienvenida();
+else if (S.perfil.saludoDia !== hoy()) {
+  /* bienvenida del día, como en la app del banco */
+  setTimeout(() => aviso(saludo() + (primerNombre() ? ", " + primerNombre() : "") + " 👋"), 400);
+  S.perfil.saludoDia = hoy();
+  guardar();
+}
 
 try {
   const anterior = localStorage.getItem('cff.version');
