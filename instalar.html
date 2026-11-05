@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Instala Control Financiero Familiar (Beta gratis)</title>
+<meta name="description" content="Instala gratis Control Financiero Familiar en tu iPhone o Android en menos de un minuto.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Control Financiero Familiar">
+<meta property="og:title" content="Instala Control Financiero Familiar · Beta gratis">
+<meta property="og:description" content="Sal de deudas y haz crecer tu hogar. Instálala en tu teléfono en menos de un minuto. Tus datos se quedan en tu teléfono.">
+<meta property="og:url" content="https://app.tribuinquebrantable.com/instalar">
+<meta property="og:image" content="https://app.tribuinquebrantable.com/icons/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:locale" content="es_US">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#14304a">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/logo.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Mi Control">
+<style>
+:root{--bg:#0b1a29;--card:#14304a;--borde:#24476a;--texto:#fff;--suave:#a9c1d6;--verde:#2ee59d;--oro:#ffc83d;--azul:#5cc8ff}
+*{box-sizing:border-box}
+html{background:var(--bg)}
+body{margin:0;font:16px/1.5 -apple-system,BlinkMacSystemFont,"Helvetica Neue",Helvetica,Arial,sans-serif;color:var(--texto);
+  background:radial-gradient(120% 60% at 80% 0%,rgba(255,200,61,.12),transparent 60%),linear-gradient(160deg,#1b4566 0%,var(--bg) 55%);min-height:100vh;
+  padding:max(24px,env(safe-area-inset-top)) 18px max(32px,env(safe-area-inset-bottom))}
+main{max-width:520px;margin:0 auto}
+.marca{display:flex;align-items:center;gap:16px;margin:8px 0 18px}
+.marca img{width:76px;height:76px;border-radius:18px;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+h1{margin:0;font-size:26px;line-height:1.15}
+h1 span{color:var(--oro)}
+.beta{display:inline-block;margin-top:6px;font-size:11px;font-weight:800;letter-spacing:.08em;padding:3px 9px;border-radius:999px;color:var(--oro);border:1px solid var(--oro);background:rgba(255,200,61,.14)}
+.lema{margin:0 0 20px;color:var(--suave);font-size:17px}
+.puntos{list-style:none;margin:0 0 22px;padding:0;display:grid;gap:8px}
+.puntos li{display:flex;gap:10px;align-items:flex-start}
+.puntos b{color:var(--verde)}
+.card{background:rgba(20,48,74,.75);border:1px solid var(--borde);border-radius:22px;padding:20px;margin:0 0 16px;backdrop-filter:blur(6px)}
+.card h2{margin:0 0 4px;font-size:20px}
+.card .sub{margin:0 0 14px;color:var(--suave);font-size:14px}
+.selector{display:grid;grid-template-columns:1fr 1fr;gap:6px;background:rgba(0,0,0,.2);padding:5px;border-radius:16px;margin:0 0 16px}
+.selector button{border:0;background:none;color:var(--suave);font:inherit;font-weight:600;min-height:42px;border-radius:12px;cursor:pointer}
+.selector button.activo{background:rgba(92,200,255,.16);color:var(--azul)}
+ol.pasos{list-style:none;counter-reset:p;margin:0;padding:0}
+ol.pasos li{counter-increment:p;display:flex;gap:14px;align-items:flex-start;padding:12px 0;border-top:1px solid rgba(255,255,255,.08)}
+ol.pasos li:first-child{border-top:0}
+ol.pasos li::before{content:counter(p);flex:0 0 32px;height:32px;border-radius:50%;display:grid;place-items:center;font-weight:800;background:var(--verde);color:#0b1a29}
+.ico{display:inline-grid;place-items:center;vertical-align:-6px;width:28px;height:28px;border-radius:8px;background:rgba(255,255,255,.1);margin:0 2px}
+.ico svg{width:18px;height:18px}
+.btn{display:block;width:100%;text-align:center;text-decoration:none;font:inherit;font-weight:700;font-size:17px;padding:15px;border-radius:16px;border:0;cursor:pointer;margin:14px 0 0}
+.btn.principal{background:var(--verde);color:#0b1a29}
+.btn.secundario{background:rgba(255,255,255,.08);color:var(--texto);border:1px solid var(--borde)}
+.alerta{background:rgba(255,200,61,.12);border:1px solid var(--oro);border-radius:16px;padding:14px 16px;margin:0 0 16px;font-size:15px}
+.qr{display:flex;gap:18px;align-items:center}
+.qr img{width:150px;height:150px;border-radius:14px;background:#fff;flex:none}
+.qr p{margin:0;color:var(--suave);font-size:14px}
+.qr b{color:var(--texto)}
+.legal{color:var(--suave);font-size:12px;text-align:center;margin:20px 0 0}
+[hidden]{display:none!important}
+@media (max-width:380px){.qr{flex-direction:column;text-align:center}}
+</style>
+</head>
+<body>
+<main>
+  <div class="marca">
+    <img src="icons/icon-180.png" alt="Logo de Control Financiero Familiar">
+    <div>
+      <h1>Control Financiero <span>Familiar</span></h1>
+      <span class="beta">BETA GRATIS</span>
+    </div>
+  </div>
+  <p class="lema">Sal de deudas y haz crecer tu hogar. Instálala en tu teléfono en menos de un minuto.</p>
+
+  <ul class="puntos">
+    <li>💸 <span><b>Mira en qué se va tu dinero</b> y arma tu presupuesto de la casa.</span></li>
+    <li>🎯 <span><b>Tu plan para salir de deudas</b>, con la fecha en que quedas libre.</span></li>
+    <li>✨ <span><b>Un versículo y un consejo</b> de dinero cada día.</span></li>
+    <li>🔒 <span><b>Tus datos se quedan en tu teléfono.</b> Nadie más los ve.</span></li>
+  </ul>
+
+  <div class="alerta" id="yaInstalada" hidden>✅ <b>¡Ya la tienes instalada!</b> Ábrela desde el ícono en tu pantalla de inicio.</div>
+
+  <div class="alerta" id="enOtraApp" hidden>
+    ⚠️ <b>Estás dentro de otra app</b> (Instagram, Facebook u otra). Desde aquí no se puede instalar.<br>
+    Toca <b>⋯</b> o <b>⋮</b> arriba y elige <b>"Abrir en el navegador"</b> (Safari en iPhone, Chrome en Android).
+    <button class="btn secundario" id="copiar" type="button">Copiar el enlace</button>
+  </div>
+
+  <section class="card" id="instrucciones">
+    <h2>Cómo instalarla</h2>
+    <p class="sub" id="detectado">Elige tu teléfono:</p>
+    <div class="selector">
+      <button type="button" data-so="ios">iPhone</button>
+      <button type="button" data-so="android">Android</button>
+    </div>
+
+    <div id="pasos-ios" hidden>
+      <ol class="pasos">
+        <li><span>Abre esta página en <b>Safari</b>, la brújula azul.</span></li>
+        <li><span>Toca el botón <b>Compartir</b>
+          <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="#5cc8ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M8 7l4-4 4 4"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg></span>
+          abajo en el centro (o arriba a la derecha en iPad). Si no lo ves, toca primero <b>⋯</b> junto a la dirección.</span></li>
+        <li><span>Baja y toca <b>"Agregar a inicio"</b>
+          <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M12 8v8M8 12h8"/></svg></span>.</span></li>
+        <li><span>Toca <b>"Agregar"</b> arriba a la derecha. ¡Listo! Ábrela desde el ícono <b>Mi Control</b>.</span></li>
+      </ol>
+    </div>
+
+    <div id="pasos-android" hidden>
+      <button class="btn principal" id="instalarAhora" type="button" hidden>📲 Instalar ahora</button>
+      <ol class="pasos" id="pasosManualAndroid">
+        <li><span>Abre esta página en <b>Chrome</b>.</span></li>
+        <li><span>Toca el menú <b>⋮</b> arriba a la derecha.</span></li>
+        <li><span>Toca <b>"Instalar app"</b> o <b>"Agregar a la pantalla principal"</b>.</span></li>
+        <li><span>Confirma con <b>"Instalar"</b>. ¡Listo! Ábrela desde el ícono <b>Mi Control</b>.</span></li>
+      </ol>
+    </div>
+
+    <a class="btn secundario" href="./">Abrir la app aquí mismo</a>
+  </section>
+
+  <section class="card">
+    <div class="qr">
+      <img src="icons/qr-instalar.png" alt="Código QR para instalar la app">
+      <p id="textoQR"><b>Compártela con tu familia.</b><br>Que escaneen este código con la cámara de su teléfono.</p>
+    </div>
+    <button class="btn secundario" id="compartir" type="button">Compartir enlace</button>
+  </section>
+
+  <p class="legal">Herramienta educativa en versión beta. No es asesoría financiera, legal ni fiscal.<br>app.tribuinquebrantable.com</p>
+</main>
+
+<script>
+(() => {
+  const $ = s => document.querySelector(s);
+  const ua = navigator.userAgent;
+  const esIOS = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+  const esAndroid = /Android/.test(ua);
+  const enOtraApp = /FBAN|FBAV|FB_IAB|Instagram|Line\/|Snapchat|TikTok|musical_ly|; wv\)/.test(ua);
+  const instalada = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  const URL_INSTALAR = 'https://app.tribuinquebrantable.com/instalar';
+
+  function elegir(so) {
+    document.querySelectorAll('[data-so]').forEach(b => b.classList.toggle('activo', b.dataset.so === so));
+    $('#pasos-ios').hidden = so !== 'ios';
+    $('#pasos-android').hidden = so !== 'android';
+  }
+  document.querySelectorAll('[data-so]').forEach(b => b.addEventListener('click', () => {
+    elegir(b.dataset.so);
+    $('#detectado').textContent = b.dataset.so === 'ios' ? 'Pasos para iPhone y iPad:' : 'Pasos para Android:';
+  }));
+
+  if (esIOS) { elegir('ios'); $('#detectado').textContent = 'Detectamos un iPhone o iPad. Sigue estos pasos:'; }
+  else if (esAndroid) { elegir('android'); $('#detectado').textContent = 'Detectamos un Android. Sigue estos pasos:'; }
+  else {
+    elegir('ios');
+    $('#detectado').textContent = 'Estás en una computadora: escanea el código QR de abajo con tu teléfono, o elige tu teléfono para ver los pasos.';
+    $('#textoQR').innerHTML = '<b>Escanea con la cámara de tu teléfono</b> para abrir esta página allí e instalar la app.';
+  }
+  if (instalada) $('#yaInstalada').hidden = false;
+  if (enOtraApp) $('#enOtraApp').hidden = false;
+
+  /* Android / Chrome: botón de instalación directa */
+  let aviso = null;
+  addEventListener('beforeinstallprompt', e => {
+    e.preventDefault();
+    aviso = e;
+    $('#instalarAhora').hidden = false;
+    $('#pasosManualAndroid').hidden = true;
+    if (!esIOS) elegir('android');
+  });
+  $('#instalarAhora').addEventListener('click', async () => {
+    if (!aviso) return;
+    aviso.prompt();
+    const r = await aviso.userChoice.catch(() => null);
+    aviso = null;
+    if (r && r.outcome === 'accepted') { $('#instalarAhora').hidden = true; $('#yaInstalada').hidden = false; }
+    else { $('#instalarAhora').hidden = true; $('#pasosManualAndroid').hidden = false; }
+  });
+  addEventListener('appinstalled', () => { $('#yaInstalada').hidden = false; contar('/instalar/instalada'); });
+
+  async function copiar() {
+    try { await navigator.clipboard.writeText(URL_INSTALAR); return true; } catch (e) { return false; }
+  }
+  $('#copiar').addEventListener('click', async e => { e.target.textContent = (await copiar()) ? '✅ Enlace copiado' : URL_INSTALAR; });
+  $('#compartir').addEventListener('click', async e => {
+    const datos = { title: 'Control Financiero Familiar', text: 'Te comparto esta app gratis para controlar el dinero de la casa y salir de deudas:', url: URL_INSTALAR };
+    try { if (navigator.share) { await navigator.share(datos); return; } } catch (err) { if (err && err.name === 'AbortError') return; }
+    e.target.textContent = (await copiar()) ? '✅ Enlace copiado' : URL_INSTALAR;
+  });
+
+  /* Necesario para que Android ofrezca instalar */
+  if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+
+  /* Visitas anónimas: solo se cuenta la página, nunca datos personales */
+  function contar(ruta) { try { window.goatcounter && window.goatcounter.count && window.goatcounter.count({ path: ruta, title: ruta, event: true }); } catch (e) {} }
+  if (location.hostname === 'app.tribuinquebrantable.com') {
+    window.goatcounter = { no_onload: true };
+    const s = document.createElement('script');
+    s.async = true;
+    s.src = 'https://gc.zgo.at/count.js';
+    s.dataset.goatcounter = 'https://controlfinanciero.goatcounter.com/count';
+    s.onload = () => contar('/instalar' + (esIOS ? '/ios' : esAndroid ? '/android' : '/computadora') + (enOtraApp ? '/otra-app' : ''));
+    document.head.appendChild(s);
+  }
+})();
+</script>
+</body>
+</html>
