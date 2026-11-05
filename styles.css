@@ -579,3 +579,10 @@ body.tapada #vista,body.tapada .tabs,body.tapada .fab,body.tapada .top,body.tapa
 .mensaje-dia blockquote{margin:0 0 10px;font-size:16px;line-height:1.45;font-style:italic}
 .mensaje-dia cite{display:block;margin-top:6px;font-style:normal;font-size:13px;font-weight:600;color:var(--muted)}
 .md-consejo{margin:0;font-size:14px;line-height:1.45;color:var(--text)}
+
+/* Cierre de la semana */
+.cierre{border-left:4px solid var(--green)}
+.lista-cierre{list-style:none;margin:12px 0 4px;padding:0}
+.lista-cierre li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;font-size:14px;border-top:1px solid var(--border)}
+.lista-cierre li span{flex:0 0 22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:13px;font-weight:800;background:var(--sutil);color:var(--muted)}
+.lista-cierre li.ok span{background:var(--green-soft);color:var(--green)}

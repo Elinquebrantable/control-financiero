@@ -8,7 +8,7 @@
  ************************************************************/
 
 /* Al publicar un cambio: subir este número y el de version.json (deben ser iguales) */
-const VERSION = '0.17.2';
+const VERSION = '0.18.0';
 const BETA = true; /* quitar en el lanzamiento oficial */
 
 const CLAVE = 'cff.v1';
@@ -784,7 +784,7 @@ function vistaInicio() {
     mensaje = 'Vas en positivo, pero ' + altas[0].nombre + ' está usada al ' + Math.round(utilizacion(altas[0])) + '%.';
   }
 
-  let h = tarjetaActualizar() + tarjetaInstalar() + tarjetaRespaldo() + selectorVista() + tarjetaMensajeDia();
+  let h = tarjetaActualizar() + tarjetaInstalar() + tarjetaRespaldo() + selectorVista() + tarjetaMensajeDia() + tarjetaCierre();
 
   h += tarjetaConfigurar();
 
@@ -3315,7 +3315,8 @@ function tarjetaCheckin(semana) {
 ACC.checkin = id => {
   const semana = Number(id);
   formulario({
-    titulo: 'Check-in de la semana ' + semana,
+    titulo: '📝 Cierre de la semana ' + semana,
+    ayuda: 'Dos preguntas, dos minutos. Escribir lo que pasó es lo que cambia los hábitos.',
     campos: [
       { n: 'freno', t: 'parrafo', l: '¿Qué me frenó esta semana?', ph: 'Ej. Gasté de más el fin de semana' },
       { n: 'corrijo', t: 'parrafo', l: '¿Qué corrijo la próxima semana?', ph: 'Ej. Llevo comida al trabajo' }
@@ -3324,7 +3325,7 @@ ACC.checkin = id => {
     guardar: v => {
       if (!v.freno && !v.corrijo) { delete S.checkins[semana]; return; }
       S.checkins[semana] = { ...v, fecha: hoy() };
-      aviso('Check-in guardado');
+      aviso(textoRacha());
     }
   });
 };
@@ -4350,6 +4351,7 @@ function vistaProgreso() {
   </div>`;
 
   h += tarjetaFinCiclo();
+  h += tarjetaCierre(true);
   h += `<div class="seccion"><h2>Indicadores</h2></div>` + tarjetaIndicadores();
   h += `<div class="seccion"><h2>Desempeño</h2></div>` + tarjetasGraficas() + tarjetaComparar(true);
   h += `<div class="seccion"><h2>Retos del mes</h2></div>` + RETOS_MES.map(r => tarjetaRetoMes(r)).join('');
@@ -4554,6 +4556,122 @@ ACC.activarNotif = async () => {
 
 
 /************************************************************
+ * CIERRE DE LA SEMANA: 5 minutos para revisar, corregir y seguir
+ * Usa las semanas del programa de 90 días y los check-ins (S.checkins).
+ ************************************************************/
+
+const DIAS_SEMANA = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+const BYDAY = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
+
+/* Semanas seguidas con cierre, contando hacia atrás desde la última que ya terminó (o la actual si ya cerró) */
+function rachaCierre() {
+  const p = programa();
+  let n = S.checkins[p.semana] ? p.semana : p.semana - 1;
+  let racha = 0;
+  while (n >= 1 && S.checkins[n]) { racha++; n--; }
+  return racha;
+}
+
+/* El cierre toca el último día de cada semana del programa y el día siguiente */
+function estadoCierre() {
+  const p = programa();
+  if (!S.perfil.inicio || p.terminado) return null;
+  const [, fin] = rangoSemana(p.semana);
+  const anterior = p.semana > 1 && !S.checkins[p.semana - 1] && diasEntre(rangoSemana(p.semana - 1)[1], hoy()) <= 1;
+  if (anterior) return { semana: p.semana - 1, tarde: true };
+  if (!S.checkins[p.semana] && diasEntre(hoy(), fin) <= 0) return { semana: p.semana, tarde: false };
+  return null;
+}
+const diaDeCierre = () => new Date(sumarDias(S.perfil.inicio || hoy(), 6) + 'T12:00:00').getDay();
+
+function listaCierre(semana) {
+  const [desde, hasta] = rangoSemana(semana);
+  const movs = S.mov.filter(x => x.fecha >= desde && x.fecha <= hasta);
+  const gastos = movs.filter(x => x.tipo === 'gasto').length;
+  const fijosPend = fijosV().filter(f => !fijoHecho(f) && f.dia && f.dia <= new Date().getDate()).length;
+  const pagosPend = proximosPagos().filter(d => d.faltan !== null && d.faltan <= 3).length;
+  return [
+    [gastos > 0, gastos ? `Anotaste ${gastos} gasto${gastos === 1 ? '' : 's'} esta semana` : 'Anota los gastos de la semana (revisa tu banco y tus recibos)'],
+    [!fijosPend, fijosPend ? `Marca ${fijosPend} pago${fijosPend === 1 ? '' : 's'} fijo${fijosPend === 1 ? '' : 's'} que ya pasó` : 'Tus pagos fijos del mes están al día'],
+    [!pagosPend, pagosPend ? `Tienes ${pagosPend} pago${pagosPend === 1 ? '' : 's'} de deuda en los próximos 3 días` : 'Ningún pago de deuda en los próximos 3 días'],
+    [!!S.retos[semana], S.retos[semana] ? 'Cumpliste el reto de la semana' : 'Revisa el reto de la semana en Progreso']
+  ];
+}
+
+function tarjetaCierre(siempre) {
+  const e = estadoCierre();
+  if (!e && !siempre) return '';
+  const p = programa();
+  const semana = e ? e.semana : p.semana;
+  const t = deLaSemana(semana);
+  const hecho = !!S.checkins[semana];
+  const racha = rachaCierre();
+  return `<div class="card cierre">
+    <h2>📝 Cierre de la semana ${semana} ${racha ? `<span class="etiqueta green">🔥 ${racha} ${racha === 1 ? 'semana' : 'semanas'}</span>` : ''}</h2>
+    <p class="ayuda" style="margin-top:0">${hecho ? 'Semana cerrada. ¡Bien hecho!' : e && e.tarde ? 'Se te pasó ayer: ciérrala ahora, toma 5 minutos.' : 'Hoy toca: 5 minutos para revisar cómo te fue y corregir el rumbo.'}</p>
+    <div class="cuatro" style="margin-top:0">
+      <div class="dato"><span>Entró</span><b class="verde">${dinero(t.ingresos)}</b></div>
+      <div class="dato"><span>Salió</span><b>${dinero(t.gastos)}</b></div>
+      <div class="dato"><span>A deudas</span><b>${dinero(t.pagos)}</b></div>
+      <div class="dato"><span>Al ahorro</span><b>${dinero(t.aportes)}</b></div>
+    </div>
+    <ul class="lista-cierre">${listaCierre(semana).map(([ok, txt]) => `<li class="${ok ? 'ok' : ''}"><span>${ok ? '✓' : '○'}</span>${esc(txt)}</li>`).join('')}</ul>
+    <div class="botones">
+      <button class="btn chico ${hecho ? '' : 'principal'}" data-a="checkin" data-id="${semana}">${hecho ? 'Ver mi cierre' : 'Cerrar mi semana'}</button>
+      ${S.perfil.cierreCalendario ? '' : '<button class="btn chico" data-a="cierreCalendario">📅 Recordármelo cada semana</button>'}
+    </div>
+  </div>`;
+}
+
+function textoRacha() {
+  const r = rachaCierre();
+  return r >= 2 ? `🔥 ¡${r} semanas seguidas cerrando! Sigue así` : 'Semana cerrada ✓ ¡Así se construye el hábito!';
+}
+
+/* Recordatorio semanal en el Calendario: el día de cierre a las 7 p.m. */
+function generarICSCierre() {
+  const sello = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  let f = hoy();
+  while (new Date(f + 'T12:00:00').getDay() !== diaDeCierre()) f = sumarDias(f, 1);
+  return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Control Financiero Familiar//ES', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'X-WR-CALNAME:Cierre semanal · Mi Control',
+    'BEGIN:VEVENT', 'UID:cierre-semanal@control-financiero', 'DTSTAMP:' + sello,
+    'DTSTART:' + fechaICS(f) + 'T190000', 'DTEND:' + fechaICS(f) + 'T191500',
+    'RRULE:FREQ=WEEKLY;BYDAY=' + BYDAY[diaDeCierre()],
+    'SUMMARY:' + escICS('📝 Cierre de la semana · Mi Control (5 min)'),
+    'DESCRIPTION:' + escICS('Anota tus gastos, marca tus pagos y responde 2 preguntas.\nhttps://app.tribuinquebrantable.com'),
+    'BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:' + escICS('📝 Hoy toca tu cierre de la semana'), 'TRIGGER:PT0S', 'END:VALARM',
+    'END:VEVENT', 'END:VCALENDAR'].join('\r\n') + '\r\n';
+}
+
+ACC.cierreCalendario = async () => {
+  const texto = generarICSCierre();
+  S.perfil.cierreCalendario = hoy();
+  guardar();
+  unaVez('cierre-calendario');
+  const archivo = new File([texto], 'cierre-semanal.ics', { type: 'text/calendar' });
+  aviso('Cada ' + DIAS_SEMANA[diaDeCierre()] + ' a las 7 p.m. te llegará el recordatorio');
+  try {
+    if (/iPhone|iPad|Android/.test(navigator.userAgent) && navigator.canShare && navigator.canShare({ files: [archivo] })) { await navigator.share({ files: [archivo], title: 'Cierre semanal · Mi Control' }); pintar(); return; }
+  } catch (e) { if (e && e.name === 'AbortError') { S.perfil.cierreCalendario = ''; guardar(); return; } }
+  window.location.href = 'data:text/calendar;charset=utf-8,' + encodeURIComponent(texto);
+  setTimeout(pintar, 500);
+};
+
+/* Aviso al abrir la app el día del cierre (si activó notificaciones) */
+async function notificarCierre() {
+  try {
+    const e = estadoCierre();
+    if (!e || !notifActiva()) return;
+    const clave = 'cff.notifCierre';
+    if (localStorage.getItem(clave) === String(e.semana)) return;
+    const reg = await navigator.serviceWorker.ready;
+    await reg.showNotification('📝 Hoy toca tu cierre de la semana', { body: '5 minutos: revisa cómo te fue y corrige el rumbo.', icon: 'icons/icon-192.png', tag: 'cierre' });
+    localStorage.setItem(clave, String(e.semana));
+  } catch (err) { /* las notificaciones nunca afectan la app */ }
+}
+
+
+/************************************************************
  * ARRANQUE
  ************************************************************/
 
@@ -4596,6 +4714,7 @@ try {
 
 if (location.protocol.startsWith('http')) buscarVersion();
 setTimeout(notificarMensajeDia, 1500);
+setTimeout(notificarCierre, 2500);
 
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
 
