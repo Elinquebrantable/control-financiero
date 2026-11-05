@@ -18,17 +18,81 @@
   --blue:#36b8ec;
   --blue-soft:rgba(54,184,236,.14);
   --radius:24px;
+  --sutil:rgba(255,255,255,.05);
+  --pista:rgba(255,255,255,.07);
+  --card-a:rgba(28,42,58,.92);
+  --card-b:rgba(20,31,44,.92);
+  --fondo:linear-gradient(180deg,#14304a 0%,#0d1d2d 32%,#09131e 70%,#08111b 100%);
+  --html-bg:#08111b;
+  --nav-bg:rgba(20,31,44,.94);
+  --nav-borde:rgba(255,255,255,.08);
+  --fab-bg:rgba(22,52,72,.95);
+  --hoja-a:#172636;
+  --hoja-b:#0f1b28;
+  --velo:rgba(2,8,14,.65);
+  --toast-bg:#1d3448;
+  --btn-oscuro:#0e1b28;
+  --sombra:0 10px 30px rgba(0,0,0,.18);
+  --sobre-cyan:#04131f;
   color-scheme:dark;
+}
+
+/* MODO CLARO (elegido en Ajustes, o automático según el teléfono) */
+:root[data-tema="claro"]{
+  --bg:#f3f7fb; --white:#ffffff; --card2:#f4f8fc;
+  --border:rgba(16,32,47,.09); --text:#10202f; --muted:#5d7186;
+  --cyan:#0b8fca; --cyan-soft:rgba(11,143,202,.12);
+  --green:#14995a; --green-soft:rgba(20,153,90,.12);
+  --yellow:#b9820c; --yellow-soft:rgba(185,130,12,.13);
+  --red:#d43f3f; --red-soft:rgba(212,63,63,.11);
+  --blue:#0b8fca; --blue-soft:rgba(11,143,202,.12);
+  --sutil:rgba(16,40,70,.045); --pista:rgba(16,40,70,.09);
+  --card-a:#ffffff; --card-b:#fbfdff;
+  --fondo:linear-gradient(180deg,#d6e9f7 0%,#eaf3fa 30%,#f4f8fb 65%,#f6f9fc 100%);
+  --html-bg:#f6f9fc;
+  --nav-bg:rgba(255,255,255,.94); --nav-borde:rgba(16,32,47,.08);
+  --fab-bg:#ffffff;
+  --hoja-a:#ffffff; --hoja-b:#f5f9fc;
+  --velo:rgba(10,25,40,.35);
+  --toast-bg:#10202f;
+  --btn-oscuro:#10202f;
+  --sombra:0 8px 24px rgba(16,40,70,.08);
+  --sobre-cyan:#ffffff;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:light){
+  :root[data-tema="auto"]{
+    --bg:#f3f7fb; --white:#ffffff; --card2:#f4f8fc;
+    --border:rgba(16,32,47,.09); --text:#10202f; --muted:#5d7186;
+    --cyan:#0b8fca; --cyan-soft:rgba(11,143,202,.12);
+    --green:#14995a; --green-soft:rgba(20,153,90,.12);
+    --yellow:#b9820c; --yellow-soft:rgba(185,130,12,.13);
+    --red:#d43f3f; --red-soft:rgba(212,63,63,.11);
+    --blue:#0b8fca; --blue-soft:rgba(11,143,202,.12);
+    --sutil:rgba(16,40,70,.045); --pista:rgba(16,40,70,.09);
+    --card-a:#ffffff; --card-b:#fbfdff;
+    --fondo:linear-gradient(180deg,#d6e9f7 0%,#eaf3fa 30%,#f4f8fb 65%,#f6f9fc 100%);
+    --html-bg:#f6f9fc;
+    --nav-bg:rgba(255,255,255,.94); --nav-borde:rgba(16,32,47,.08);
+    --fab-bg:#ffffff;
+    --hoja-a:#ffffff; --hoja-b:#f5f9fc;
+    --velo:rgba(10,25,40,.35);
+    --toast-bg:#10202f;
+    --btn-oscuro:#10202f;
+    --sombra:0 8px 24px rgba(16,40,70,.08);
+    --sobre-cyan:#ffffff;
+    color-scheme:light;
+  }
 }
 
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 
 html,body{margin:0}
-html{background:#08111b}
+html{background:var(--html-bg)}
 
 body{
   font-family:ui-rounded,"SF Pro Rounded",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-  background:linear-gradient(180deg,#14304a 0%,#0d1d2d 32%,#09131e 70%,#08111b 100%) fixed;
+  background:var(--fondo) fixed;
   min-height:100vh;
   color:var(--text);
   font-size:16px;
@@ -55,7 +119,7 @@ button{cursor:pointer}
   width:44px;height:44px;border-radius:14px;
   display:grid;place-items:center;flex:none;
 }
-.icono:active{background:rgba(255,255,255,.06)}
+.icono:active{background:var(--sutil)}
 
 main{padding:10px 18px 16px;max-width:640px;margin:0 auto}
 
@@ -68,12 +132,12 @@ main{padding:10px 18px 16px;max-width:640px;margin:0 auto}
 /* TARJETAS */
 
 .card{
-  background:linear-gradient(180deg,rgba(28,42,58,.92),rgba(20,31,44,.92));
+  background:linear-gradient(180deg,var(--card-a),var(--card-b));
   border:1px solid var(--border);
   border-radius:var(--radius);
   padding:20px;
   margin-bottom:14px;
-  box-shadow:0 10px 30px rgba(0,0,0,.18);
+  box-shadow:var(--sombra);
 }
 .card h2{margin:0 0 12px;font-size:17px;font-weight:700}
 .card h2 small{font-weight:500;color:var(--muted);font-size:13px}
@@ -94,7 +158,7 @@ main{padding:10px 18px 16px;max-width:640px;margin:0 auto}
 .semaforo.blue{border-left-color:var(--cyan)}
 
 .cuatro{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
-.dato{background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:16px;padding:11px 13px}
+.dato{background:var(--sutil);border:1px solid var(--border);border-radius:16px;padding:11px 13px}
 .dato span{display:block;font-size:12px;color:var(--muted)}
 .dato b{font-size:17px}
 
@@ -107,7 +171,7 @@ main{padding:10px 18px 16px;max-width:640px;margin:0 auto}
 .hero .cifras b{display:block;font-size:24px;font-weight:700;letter-spacing:-.01em;white-space:nowrap}
 .anillo{position:relative;width:150px;height:150px;flex:none}
 .anillo svg{width:100%;height:100%;transform:rotate(-90deg)}
-.anillo .pista{fill:none;stroke:rgba(255,255,255,.07);stroke-width:9}
+.anillo .pista{fill:none;stroke:var(--pista);stroke-width:9}
 .anillo .valor{fill:none;stroke:var(--cyan);stroke-width:9;stroke-linecap:round;transition:stroke-dashoffset .6s}
 .anillo .valor.rojo{stroke:var(--red)}
 .anillo .centro{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
@@ -167,7 +231,7 @@ main{padding:10px 18px 16px;max-width:640px;margin:0 auto}
 
 /* BARRAS */
 
-.barra{height:8px;background:rgba(255,255,255,.07);border-radius:999px;overflow:hidden;margin:8px 0 4px}
+.barra{height:8px;background:var(--pista);border-radius:999px;overflow:hidden;margin:8px 0 4px}
 .barra i{display:block;height:100%;background:var(--green);border-radius:999px;transition:width .3s}
 .barra.azul i{background:var(--cyan)}
 .barra.roja i{background:var(--red)}
@@ -181,10 +245,10 @@ main{padding:10px 18px 16px;max-width:640px;margin:0 auto}
   display:inline-flex;align-items:center;justify-content:center;gap:8px;
   min-height:48px;padding:0 18px;
   border-radius:16px;border:1px solid var(--border);
-  background:rgba(255,255,255,.05);font-weight:600;white-space:nowrap;color:var(--text);
+  background:var(--sutil);font-weight:600;white-space:nowrap;color:var(--text);
 }
-.btn.principal{background:var(--cyan);border-color:var(--cyan);color:#04131f}
-.btn.oscuro{background:#0e1b28;border-color:var(--border);color:#fff}
+.btn.principal{background:var(--cyan);border-color:var(--cyan);color:var(--sobre-cyan)}
+.btn.oscuro{background:var(--btn-oscuro);border-color:var(--border);color:#fff}
 .btn.peligro{color:var(--red);border-color:transparent;background:var(--red-soft)}
 .btn.ancho{width:100%}
 .btn.chico{min-height:42px;padding:0 14px;font-size:14px}
@@ -195,7 +259,7 @@ main{padding:10px 18px 16px;max-width:640px;margin:0 auto}
 .mes{display:flex;align-items:center;gap:6px}
 .mes button{
   width:34px;height:34px;border-radius:12px;border:1px solid var(--border);
-  background:rgba(255,255,255,.05);font-size:18px;line-height:1;color:var(--text);
+  background:var(--sutil);font-size:18px;line-height:1;color:var(--text);
 }
 .mes button:disabled{opacity:.35}
 .mes b{min-width:104px;text-align:center;font-size:14px;white-space:nowrap}
@@ -207,9 +271,9 @@ main{padding:10px 18px 16px;max-width:640px;margin:0 auto}
   left:50%;transform:translateX(-50%);
   bottom:calc(14px + env(safe-area-inset-bottom));
   width:calc(100% - 32px);max-width:560px;
-  background:rgba(20,31,44,.94);
+  background:var(--nav-bg);
   -webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px);
-  border:1px solid rgba(255,255,255,.08);
+  border:1px solid var(--nav-borde);
   border-radius:40px;
   display:grid;grid-template-columns:repeat(5,1fr);
   padding:8px;
@@ -234,7 +298,7 @@ main{padding:10px 18px 16px;max-width:640px;margin:0 auto}
   right:max(20px,calc(50% - 300px));
   bottom:calc(108px + env(safe-area-inset-bottom));
   width:66px;height:66px;border-radius:50%;
-  background:rgba(22,52,72,.95);border:1.5px solid rgba(54,184,236,.55);color:var(--cyan);
+  background:var(--fab-bg);border:1.5px solid rgba(54,184,236,.55);color:var(--cyan);
   display:grid;place-items:center;
   box-shadow:0 10px 26px rgba(0,0,0,.4);
 }
@@ -244,12 +308,12 @@ main{padding:10px 18px 16px;max-width:640px;margin:0 auto}
 /* HOJA (formularios) */
 
 .fondo{
-  position:fixed;inset:0;z-index:40;background:rgba(2,8,14,.65);
+  position:fixed;inset:0;z-index:40;background:var(--velo);
   display:flex;align-items:flex-end;justify-content:center;
 }
 .fondo[hidden]{display:none}
 .hoja{
-  background:linear-gradient(180deg,#172636,#0f1b28);
+  background:linear-gradient(180deg,var(--hoja-a),var(--hoja-b));
   border:1px solid var(--border);border-bottom:0;
   width:100%;max-width:640px;
   border-radius:28px 28px 0 0;
@@ -261,13 +325,13 @@ main{padding:10px 18px 16px;max-width:640px;margin:0 auto}
 .hoja h2{margin:0;font-size:22px;font-weight:700}
 .hoja .cerrar{
   width:42px;height:42px;border-radius:50%;border:1px solid var(--border);
-  background:rgba(255,255,255,.06);font-size:18px;color:var(--cyan);
+  background:var(--sutil);font-size:18px;color:var(--cyan);
 }
 .campo{display:block;margin-top:14px}
 .campo>span{display:block;font-size:13px;font-weight:600;color:var(--muted);margin-bottom:6px}
 .campo input,.campo select,.campo textarea{
   width:100%;min-height:52px;padding:0 15px;
-  border:1px solid var(--border);border-radius:16px;background:rgba(255,255,255,.05);color:var(--text);
+  border:1px solid var(--border);border-radius:16px;background:var(--sutil);color:var(--text);
 }
 .campo input:focus,.campo select:focus,.campo textarea:focus{outline:2px solid rgba(54,184,236,.5);border-color:transparent}
 .campo input.dinero{font-size:28px;font-weight:700;min-height:62px}
@@ -278,14 +342,14 @@ main{padding:10px 18px 16px;max-width:640px;margin:0 auto}
 
 .opciones{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px}
 .opcion{
-  border:1px solid var(--border);border-radius:20px;background:rgba(255,255,255,.04);
+  border:1px solid var(--border);border-radius:20px;background:var(--sutil);
   padding:16px 14px;text-align:left;color:var(--text);
 }
 .opcion b{display:block;font-size:16px}
 .opcion span{font-size:13px;color:var(--muted)}
 .opcion .emo{font-size:26px;display:block;margin-bottom:6px}
 
-.segmento{display:grid;grid-template-columns:1fr 1fr;gap:6px;background:rgba(255,255,255,.05);padding:5px;border-radius:18px;border:1px solid var(--border)}
+.segmento{display:grid;grid-template-columns:1fr 1fr;gap:6px;background:var(--sutil);padding:5px;border-radius:18px;border:1px solid var(--border)}
 .segmento button{border:0;background:none;min-height:42px;border-radius:14px;font-weight:600;color:var(--muted)}
 .segmento button.activo{background:var(--cyan-soft);color:var(--cyan)}
 
@@ -293,7 +357,7 @@ main{padding:10px 18px 16px;max-width:640px;margin:0 auto}
 
 .grupo-titulo{font-size:13px;font-weight:700;letter-spacing:.12em;color:var(--muted);margin:24px 8px 10px;text-transform:uppercase}
 .grupo{
-  background:linear-gradient(180deg,rgba(28,42,58,.92),rgba(20,31,44,.92));
+  background:linear-gradient(180deg,var(--card-a),var(--card-b));
   border:1px solid var(--border);border-radius:24px;overflow:hidden;
 }
 .ajuste{
@@ -340,7 +404,7 @@ main{padding:10px 18px 16px;max-width:640px;margin:0 auto}
 
 .aviso{
   position:fixed;left:50%;bottom:calc(190px + env(safe-area-inset-bottom));transform:translateX(-50%);
-  background:#1d3448;color:#fff;border:1px solid rgba(54,184,236,.35);
+  background:var(--toast-bg);color:#fff;border:1px solid rgba(54,184,236,.35);
   padding:12px 18px;border-radius:999px;
   font-weight:600;font-size:14px;z-index:60;max-width:90vw;text-align:center;
   box-shadow:0 8px 24px rgba(0,0,0,.35);
@@ -356,7 +420,7 @@ main{padding:10px 18px 16px;max-width:640px;margin:0 auto}
 }
 .factura.grande{max-height:none;object-fit:contain;cursor:zoom-out}
 a.btn{text-decoration:none;color:inherit}
-a.btn.principal{color:#04131f}
+a.btn.principal{color:var(--sobre-cyan)}
 
 /* PERSONAL | NEGOCIO | TODO */
 
@@ -381,3 +445,58 @@ a.btn.principal{color:#04131f}
   .top h1{font-size:34px}
 }
 .hola .dia{display:block;font-size:13px;margin-top:1px}
+
+/* INDICADORES TIPO BOLSA */
+
+.ind{
+  display:inline-flex;align-items:center;gap:3px;
+  font-size:12px;font-weight:700;padding:3px 8px;border-radius:8px;white-space:nowrap;
+  font-variant-numeric:tabular-nums;
+}
+.ind.bien{background:var(--green-soft);color:var(--green)}
+.ind.mal{background:var(--red-soft);color:var(--red)}
+.ind.neutro{background:var(--sutil);color:var(--muted)}
+.ticker{padding:8px 18px}
+.tick{display:flex;align-items:center;gap:12px;padding:12px 0;border-top:1px solid var(--border)}
+.tick:first-child{border-top:0}
+.tick .punto{width:40px;height:40px;border-radius:13px;flex:none;display:grid;place-items:center;font-size:18px;background:var(--cyan-soft)}
+.tick .txt{flex:1;min-width:0}
+.tick .txt b{display:block;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tick .txt span{font-size:12px;color:var(--muted)}
+.tick .der{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+.tick .der b{font-size:16px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tick .der small{font-size:11px;color:var(--muted);font-weight:500}
+
+/* GRÁFICAS */
+
+.grafica svg{display:block;width:100%;height:150px;overflow:visible}
+.grafica .ejes{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:4px;text-transform:capitalize}
+.barras{display:flex;align-items:flex-end;gap:8px;height:150px;padding-top:6px}
+.barras .col{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;height:100%}
+.barras .par{flex:1;width:100%;display:flex;align-items:flex-end;justify-content:center;gap:3px}
+.barras i{display:block;width:42%;max-width:16px;min-height:2px;border-radius:6px 6px 2px 2px;transition:height .4s}
+.barras i.a,.leyenda i.a{background:var(--green)}
+.barras i.b,.leyenda i.b{background:var(--red);opacity:.85}
+.barras span{font-size:11px;color:var(--muted);text-transform:capitalize}
+.leyenda{display:flex;gap:16px;justify-content:center;font-size:12px;color:var(--muted);margin-top:10px}
+.leyenda span{display:inline-flex;align-items:center;gap:6px}
+.leyenda i{display:inline-block;width:10px;height:10px;border-radius:3px}
+
+/* PASOS DEL RETO DEL MES */
+
+.pasos{list-style:none;margin:10px 0 0;padding:0;font-size:14px;color:var(--muted)}
+.pasos li{padding:3px 0}
+.pasos li.ok{color:var(--green)}
+
+/* SALUD FINANCIERA Y COSTO DE LAS DECISIONES */
+
+.factores{list-style:none;margin:16px 0 0;padding:0}
+.factores li{font-size:14px;color:var(--muted);padding:10px 0 10px 12px;border-top:1px solid var(--border);border-left:3px solid var(--green);margin-top:6px}
+.factores li.mal{border-left-color:var(--red)}
+.factores li b{display:flex;justify-content:space-between;gap:8px;color:var(--text);font-size:15px;margin-bottom:2px}
+.factores li b span{font-variant-numeric:tabular-nums;color:var(--muted);font-weight:600}
+.factores li.mal b span{color:var(--red)}
+.costo{display:block;margin-top:6px;font-size:13px;color:var(--muted)}
+.hero .cifras b.verde{color:var(--green)}
+.hero .cifras b.amarillo{color:var(--yellow)}
+.hero .cifras b.rojo{color:var(--red)}

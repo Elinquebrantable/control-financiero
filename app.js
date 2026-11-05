@@ -8,17 +8,26 @@
  ************************************************************/
 
 /* Al publicar un cambio: subir este número y el de version.json (deben ser iguales) */
-const VERSION = '0.11.0';
+const VERSION = '0.12.0';
 
 const CLAVE = 'cff.v1';
 const DIAS_PROGRAMA = 90;
 const SEMANAS = 13;
 
 const CAT_GASTO = {
-  'Comida': '🛒', 'Vivienda': '🏠', 'Transporte': '🚗', 'Servicios': '💡',
-  'Seguros': '🛡️', 'Salud': '🩺', 'Hijos': '🧒', 'Educación': '🎓', 'Diversión': '🎉',
-  'Ropa': '👕', 'Suscripciones': '📺', 'Otros': '📦'
+  'Comida': '🛒', 'Restaurantes': '🍽️', 'Vivienda': '🏠', 'Electricidad': '⚡', 'Agua': '💧',
+  'Servicios': '🔥', 'Internet y teléfono': '📱', 'Transporte': '🚗', 'Gasolina': '⛽', 'Seguros': '🛡️',
+  'Salud': '🩺', 'Cuidado personal': '💇', 'Hijos': '🧒', 'Educación': '🎓', 'Mascotas': '🐾',
+  'Diversión': '🎉', 'Ropa': '👕', 'Suscripciones': '📺', 'Donaciones': '🙏', 'Otros': '📦'
 };
+/* Nombre que se muestra (la clave se guarda igual para no romper datos viejos) */
+const NOMBRE_CAT = {
+  'Comida': 'Comida y súper', 'Vivienda': 'Vivienda (renta o hipoteca)', 'Servicios': 'Gas y otros servicios',
+  'Transporte': 'Carro y transporte', 'Donaciones': 'Donaciones y diezmo'
+};
+const nombreCat = c => NOMBRE_CAT[c] || c;
+/* Forma de pago de cada gasto */
+const FORMAS_PAGO = { credito: '💳 Tarjeta de crédito', debito: '🏦 Débito / transferencia', efectivo: '💵 Efectivo' };
 const CAT_INGRESO = {
   'Salario': '💼', 'Negocio': '🏪', 'Renta': '🏘️', 'Inversiones': '📈',
   'Pasivo': '🌱', 'Extra': '✨', 'Otros': '💵'
@@ -107,7 +116,7 @@ const nuevoEstado = () => ({
   v: 1,
   perfil: {
     nombre: '', moneda: '$', inicio: '', metodo: '', extra: 0, sinDeudas: false,
-    instalarLuego: '', ultimoRespaldo: '', ultimaCuenta: '', correo: '', saludoDia: '',
+    instalarLuego: '', ultimoRespaldo: '', ultimaCuenta: '', correo: '', saludoDia: '', tema: 'oscuro',
     negocio: '', vista: 'todo', extraPersonal: 0, extraNegocio: 0
   },
   mov: [],      // {id, tipo:'gasto'|'ingreso', monto, cat, nota, fecha, fuga, cuenta, fijoId, foto, ambito}
@@ -121,7 +130,12 @@ const nuevoEstado = () => ({
   presupuesto: {}, // gasto mensual planeado de la casa por categoría: {Comida: 600, …}
   checkins: {}, // {semana: {freno, corrijo, fecha}}
   retos: {},    // {n: 'fecha en que se cumplió'}
-  radio: null   // {emocion, preocupa, identidad, fecha}
+  radio: null,  // {emocion, preocupa, identidad, fecha}
+  historial: {}, // foto de totales por mes: {'AAAA-MM': {deuda, cuentas, ahorro…}}
+  ciclo: null,   // ciclo de 90 días en curso: {n, inicio, base, cortes}
+  ciclos: [],    // resúmenes de ciclos terminados
+  retosMes: {},  // retos del mes logrados: {n: fecha}
+  catsPropias: {} // categorías de gasto agregadas por la persona: {nombre: emoji}
 });
 
 function leer() {
@@ -137,6 +151,7 @@ function leer() {
 }
 
 function guardar() {
+  try { registrarFoto(); } catch (e) { /* la foto del mes nunca impide guardar */ }
   try {
     localStorage.setItem(CLAVE, JSON.stringify(S));
   } catch (e) {
@@ -680,8 +695,8 @@ const RETOS = [
  * NAVEGACIÓN
  ************************************************************/
 
-const TITULOS = { inicio: 'Inicio', ingresos: 'Ingresos', deudas: 'Deudas', ahorros: 'Ahorros', retos: 'Retos' };
-const VISTAS = { inicio: vistaInicio, ingresos: vistaIngresos, deudas: vistaDeudas, ahorros: vistaAhorros, retos: vistaRetos };
+const TITULOS = { inicio: 'Inicio', ingresos: 'Ingresos', deudas: 'Deudas', ahorros: 'Ahorros', retos: 'Progreso' };
+const VISTAS = { inicio: vistaInicio, ingresos: vistaIngresos, deudas: vistaDeudas, ahorros: vistaAhorros, retos: vistaProgreso };
 
 function ir(v) {
   vistaActual = v;
@@ -698,6 +713,7 @@ const primerNombre = () => String(S.perfil.nombre || '').trim().split(/\s+/)[0];
 const correoValido = c => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(c || '').trim());
 
 function pintar() {
+  reconstruirCats();
   const p = programa();
   $('#titulo').textContent = TITULOS[vistaActual];
   $('#hola').innerHTML =
@@ -771,6 +787,8 @@ function vistaInicio() {
     <button class="icono" data-a="ir" data-id="ingresos" aria-label="Ver ingresos"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h18l-7 8v6l-4 2v-8z"/></svg></button>
   </div>` + tarjetaDisponible();
 
+  if (vistaElegida() !== 'negocio') h += tarjetaSalud();
+
   const promos = esteMes ? promosPorVencer(120) : [];
   if (promos.length) {
     h += `<div class="card semaforo ${diasPromo(promos[0]) <= 60 ? 'red' : 'yellow'}">
@@ -780,6 +798,10 @@ function vistaInicio() {
         No le cargues nada nuevo y define cómo la vas a pagar antes de esa fecha.</li>`).join('')}</ul>
     </div>`;
   }
+
+  h += tarjetaFinCiclo();
+
+  h += `<div class="seccion"><h2>Mis indicadores</h2><button class="icono" data-a="verRetos" aria-label="Ver progreso"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></button></div>` + tarjetaIndicadores(4);
 
   h += seccionProximo();
 
@@ -814,6 +836,7 @@ function vistaInicio() {
       <p>${esc(reto.texto)}</p>
       <div class="botones"><button class="btn chico ${hecho ? '' : 'principal'}" data-a="verRetos">${hecho ? 'Ver todos los retos' : 'Ir al reto'}</button></div>
     </div>`;
+    h += tarjetaRetoMes(RETOS_MES[mesDelCiclo() - 1], true);
   }
 
   if (esteMes) h += tarjetaFijos() + tarjetaDinero();
@@ -823,6 +846,7 @@ function vistaInicio() {
   const gastos = r.lista.filter(x => x.k === 'mov' && x.tipo === 'gasto');
   if (vistaElegida() !== 'negocio') {
     h += tarjetaPresupuesto(r);
+    h += tarjetaComparar(false);
   } else if (gastos.length) {
     const porCat = {};
     gastos.forEach(g => { porCat[g.cat] = (porCat[g.cat] || 0) + g.monto; });
@@ -1119,7 +1143,7 @@ function filaMov(x) {
   } else if (x.tipo === 'ingreso') {
     emo = CAT_INGRESO[x.cat] || '💵'; titulo = x.nota || x.cat; sub = x.cat; monto = '+' + dinero(x.monto); clase = 'verde';
   } else {
-    emo = CAT_GASTO[x.cat] || '📦'; titulo = x.nota || x.cat; sub = x.cat; monto = '-' + dinero(x.monto);
+    emo = CAT_GASTO[x.cat] || '📦'; titulo = x.nota || nombreCat(x.cat); sub = nombreCat(x.cat) + (x.pago === 'efectivo' ? ' · 💵 efectivo' : ''); monto = '-' + dinero(x.monto);
   }
   return `
     <li><button class="fila-btn" data-a="abrirMov" data-id="${x.k}:${x.id}">
@@ -1440,6 +1464,7 @@ function tarjetaPresupuesto(r) {
   const gastado = suma(gastos, g => g.monto);
   const fugas = suma(gastos.filter(g => g.fuga), g => g.monto);
   const cats = Object.keys(CAT_GASTO).filter(c => plan[c] > 0 || porCat[c] > 0);
+  const compa = comparativo(mesVer);
 
   let h = `<div class="card"><h2>🏠 Gastos de la casa <small>· ${esc(nombreMes(mesVer))}</small>
     ${fugas ? `<span class="etiqueta red">Fugas ${dinero(fugas)}</span>` : ''}</h2>`;
@@ -1459,7 +1484,7 @@ function tarjetaPresupuesto(r) {
       const p = plan[c] || 0;
       const pasado = p > 0 && g > p;
       return `<div class="cat">
-        <div class="fila"><span>${CAT_GASTO[c]} ${esc(c)}</span>
+        <div class="fila"><span>${CAT_GASTO[c]} ${esc(nombreCat(c))} ${(() => { const f = compa.filas.find(x => x.cat === c); return f && compa.hayAnterior ? chip(f.pc, 'baja') : ''; })()}</span>
           <b class="${pasado ? 'rojo' : ''}">${dinero(g)}${p ? ' <small class="muted">de ' + dinero(p) + '</small>' : ''}</b></div>
         <div class="barra ${pasado ? 'roja' : 'azul'}"><i style="width:${p ? pct(g, p) : 100}%"></i></div>
       </div>`;
@@ -1472,14 +1497,347 @@ function tarjetaPresupuesto(r) {
 ACC.editarPresupuesto = () => formulario({
   titulo: 'Presupuesto mensual de la casa',
   ayuda: 'Cuánto planeas gastar cada mes en cada categoría. Deja en blanco lo que no aplique. Los pagos de tarjetas no van aquí: van en Deudas.',
-  campos: Object.keys(CAT_GASTO).map(c => ({ n: c, t: 'dinero', l: CAT_GASTO[c] + ' ' + c })),
+  campos: Object.keys(CAT_GASTO).map(c => ({ n: c, t: 'dinero', l: CAT_GASTO[c] + ' ' + nombreCat(c) + (REFERENCIA_USA[c] ? ' · EE. UU. ≈' + REFERENCIA_USA[c] + '%' : '') })),
   valores: S.presupuesto || {},
+  extra: `<div class="botones"><button type="button" class="btn chico" data-a="sugerirPresupuesto">✨ Llenar con el promedio de EE. UU.</button><button type="button" class="btn chico" data-a="categorias">+ Categoría propia</button></div>
+    <p class="ayuda">El % es lo que una familia promedio en EE. UU. destina de su ingreso a cada categoría (BLS 2023, aprox.). Es una referencia, no una regla.</p>`,
   guardar: v => {
     S.presupuesto = {};
     Object.entries(v).forEach(([c, m]) => { if (m > 0) S.presupuesto[c] = m; });
   }
 });
 
+
+/************************************************************
+ * CATEGORÍAS PROPIAS (productos o servicios que agrega la persona)
+ ************************************************************/
+
+const CAT_BASE = { ...CAT_GASTO };
+
+/* Une las categorías de la app con las propias; "Otros" siempre al final */
+function reconstruirCats() {
+  Object.keys(CAT_GASTO).forEach(k => delete CAT_GASTO[k]);
+  const { Otros, ...resto } = CAT_BASE;
+  Object.assign(CAT_GASTO, resto, (S && S.catsPropias) || {}, { Otros });
+}
+
+const EMOJIS_CAT = ['🛍️', '🏋️', '💇', '🐾', '🙏', '🧹', '🔧', '🧾', '📱', '💊', '🎮', '✈️', '🎁', '🧺', '👶', '🚌', '🅿️', '🏫', '💻', '🍼', '🛠️', '🌿', '⛪', '📦'];
+
+ACC.categorias = () => {
+  const propias = Object.entries(S.catsPropias || {});
+  formulario({
+    titulo: 'Categorías de gastos',
+    ayuda: 'Agrega los productos o servicios que pagas y no están en la lista (ej. Gimnasio, Lavandería, Diezmo, Niñera). Aparecen al registrar gastos, en el presupuesto y en las comparaciones.',
+    campos: [
+      { n: 'nombre', t: 'texto', l: 'Nombre de la categoría nueva', req: true, ph: 'Ej. Gimnasio' },
+      { n: 'emoji', t: 'select', l: 'Ícono', ops: EMOJIS_CAT }
+    ],
+    valores: { emoji: EMOJIS_CAT[0] },
+    texto: 'Agregar categoría',
+    extra: propias.length ? `<div class="campo"><span>Tus categorías</span><ul class="lista">` + propias.map(([n, e]) => `
+      <li><span class="punto">${e}</span><span class="txt"><b>${esc(n)}</b></span>
+        <button type="button" class="btn chico peligro" data-a="quitarCat" data-id="${esc(n)}">Quitar</button></li>`).join('') + `</ul></div>` : '',
+    guardar: v => {
+      const nombre = v.nombre.replace(/\s+/g, ' ').trim().slice(0, 30);
+      const existe = Object.keys(CAT_GASTO).find(k => k.toLowerCase() === nombre.toLowerCase());
+      if (existe) { aviso('Esa categoría ya existe'); return; }
+      S.catsPropias = { ...(S.catsPropias || {}), [nombre]: v.emoji };
+      reconstruirCats();
+      aviso('Categoría agregada: ' + nombre);
+    }
+  });
+};
+
+ACC.quitarCat = n => {
+  if (!S.catsPropias || !S.catsPropias[n]) return;
+  delete S.catsPropias[n];
+  if (S.presupuesto) delete S.presupuesto[n];
+  reconstruirCats(); guardar(); ACC.categorias();
+  aviso('Quitada. Los gastos que ya tenías conservan su nombre.');
+};
+
+
+/************************************************************
+ * COMPARADOR DE GASTOS (como el análisis de las apps de banco)
+ * Compara cada categoría con el mismo punto del mes pasado y
+ * con el promedio de los 3 meses anteriores.
+ ************************************************************/
+
+function gastosDeMes(m, hastaDia) {
+  return resumen(m).lista.filter(x => x.k === 'mov' && x.tipo === 'gasto' &&
+    (!hastaDia || Number(x.fecha.slice(8, 10)) <= hastaDia));
+}
+const agrupar = (lista, campo) => {
+  const o = {};
+  lista.forEach(g => { const k = g[campo] || 'sin'; o[k] = (o[k] || 0) + g.monto; });
+  return o;
+};
+const nombreMesCorto = m => nombreMes(m).split(' ')[0].toLowerCase();
+
+function comparativo(m = mesVer) {
+  const esActual = m === mesActual();
+  const dia = esActual ? new Date().getDate() : null;
+  const diasMes = new Date(Number(m.slice(0, 4)), Number(m.slice(5, 7)), 0).getDate();
+  const previo = mesAnterior(m);
+  const act = gastosDeMes(m);
+  const ant = gastosDeMes(previo, dia);
+  const historia = [];
+  let k = m;
+  for (let i = 0; i < 3; i++) { k = mesAnterior(k); historia.push(agrupar(gastosDeMes(k), 'cat')); }
+  const conDatos = historia.filter(o => Object.keys(o).length).length;
+  const cA = agrupar(act, 'cat'), cB = agrupar(ant, 'cat');
+  const cPrevCompleto = agrupar(gastosDeMes(previo), 'cat');
+
+  const filas = [...new Set([...Object.keys(cA), ...Object.keys(cB)])].map(c => {
+    const a = r2(cA[c] || 0), b = r2(cB[c] || 0);
+    const prom = conDatos ? r2(suma(historia, o => o[c] || 0) / conDatos) : null;
+    const proy = esActual && dia ? r2(a * diasMes / dia) : a;
+    const pc = cambioPct(a, b || null);
+    const importante = b > 0 ? Math.abs(a - b) >= 25 && Math.abs(pc) >= 20 : a >= 50 && conDatos > 0;
+    /* Sugerencia: lo que ya llevas este mes o lo normal de un mes completo (promedio o mes pasado) */
+    const sugerido = Math.ceil(Math.max(a, prom || cPrevCompleto[c] || 0) / 10) * 10;
+    return { cat: c, a, b, prom, proy, pc, dif: r2(a - b), importante, sugerido };
+  }).sort((x, y) => Math.abs(y.dif) - Math.abs(x.dif));
+
+  return {
+    filas, esActual, dia,
+    etq: esActual ? 'vs mismo día de ' + nombreMesCorto(previo) : 'vs ' + nombreMesCorto(previo),
+    pagoA: agrupar(act, 'pago'), pagoB: agrupar(ant, 'pago'),
+    hayAnterior: ant.length > 0, total: r2(suma(act, g => g.monto)), totalAnt: r2(suma(ant, g => g.monto))
+  };
+}
+
+function textoAlerta(f, etq) {
+  const ic = CAT_GASTO[f.cat] || '📦';
+  if (!f.b) return `${ic} <b>${esc(nombreCat(f.cat))}</b>: ${dinero(f.a)} este mes y no tenías gasto ${esc(etq.replace('vs ', 'en el '))}.`;
+  return f.dif > 0
+    ? `${ic} <b>${esc(nombreCat(f.cat))}</b> subió <b class="rojo">${Math.abs(f.pc).toFixed(0)}%</b> (${dinero(f.dif)} más) ${esc(etq)}.${lineaCosto(f.dif)}`
+    : `${ic} <b>${esc(nombreCat(f.cat))}</b> bajó <b class="verde">${Math.abs(f.pc).toFixed(0)}%</b> (${dinero(-f.dif)} menos) ${esc(etq)}. ¡Bien!`;
+}
+
+function tarjetaComparar(completa) {
+  const c = comparativo(mesVer);
+  if (!c.filas.length) return completa ? `<div class="card"><h2>🔍 Cambios en tus gastos</h2><p class="chico muted" style="margin:0">Registra tus gastos con su categoría y forma de pago. Desde el segundo mes verás aquí qué subió, qué bajó y sugerencias para tu presupuesto.</p></div>` : '';
+  const plan = S.presupuesto || {};
+  const alertas = c.filas.filter(f => f.importante).slice(0, completa ? 10 : 3);
+  let h = `<div class="card"><h2>🔍 Cambios en tus gastos <small>· ${esc(nombreMes(mesVer))} ${esc(c.etq)}</small></h2>
+    <div class="fila" style="margin-bottom:8px"><span class="chico muted">Total gastado</span><span><b>${dinero(c.total)}</b> ${c.hayAnterior ? chip(cambioPct(c.total, c.totalAnt || null), 'baja') : ''}</span></div>`;
+
+  if (alertas.length) {
+    h += `<ul class="consejos">` + alertas.map(f => {
+      const ajustar = f.dif > 0 && f.sugerido > (plan[f.cat] || 0);
+      return `<li>${textoAlerta(f, c.etq)}
+        ${ajustar ? `<div class="botones" style="margin-top:8px"><button class="btn chico" data-a="ajustarPres" data-id="${esc(f.cat)}|${f.sugerido}">Ajustar presupuesto a ${dinero(f.sugerido)}${plan[f.cat] ? ' (hoy ' + dinero(plan[f.cat]) + ')' : ''}</button></div>` : ''}</li>`;
+    }).join('') + `</ul>`;
+  } else if (c.hayAnterior) {
+    h += `<p class="chico muted" style="margin:0">Sin cambios importantes ${esc(c.etq)}. Vas estable.</p>`;
+  } else {
+    h += `<p class="chico muted" style="margin:0">Todavía no hay gastos del mes anterior para comparar. El próximo mes verás aquí los cambios.</p>`;
+  }
+
+  if (completa) {
+    h += `<h2 style="margin-top:16px">Por categoría</h2><div class="ticker" style="padding:0">` + c.filas.map(f => `
+      <div class="tick">
+        <span class="punto">${CAT_GASTO[f.cat] || '📦'}</span>
+        <span class="txt"><b>${esc(nombreCat(f.cat))}</b><span>Antes ${dinero(f.b)}${f.prom !== null ? ' · promedio ' + dinero(f.prom) : ''}${plan[f.cat] ? ' · plan ' + dinero(plan[f.cat]) : ''}</span></span>
+        <span class="der"><b>${dinero(f.a)}</b>${chip(f.pc, 'baja')}</span>
+      </div>`).join('') + `</div>`;
+  }
+
+  const formas = Object.keys(FORMAS_PAGO).filter(k => c.pagoA[k] || c.pagoB[k]);
+  if (formas.length && (completa || (c.pagoA.efectivo || 0) > (c.pagoB.efectivo || 0) * 1.2 && (c.pagoA.efectivo || 0) >= 50)) {
+    h += `<h2 style="margin-top:16px">Por forma de pago</h2><div class="ticker" style="padding:0">` + formas.map(k => {
+      const [ic, ...nom] = FORMAS_PAGO[k].split(' ');
+      return `<div class="tick"><span class="punto">${ic}</span><span class="txt"><b>${esc(nom.join(' '))}</b><span>Antes ${dinero(c.pagoB[k] || 0)}</span></span>
+        <span class="der"><b>${dinero(c.pagoA[k] || 0)}</b>${chip(cambioPct(c.pagoA[k] || 0, c.pagoB[k] || null), 'baja')}</span></div>`;
+    }).join('') + `</div>`;
+    if ((c.pagoA.efectivo || 0) > (c.pagoB.efectivo || 0) && (c.pagoA.efectivo || 0) >= 50) {
+      h += `<p class="ayuda">💵 Tus pagos en efectivo subieron. El efectivo es donde más se esconden las fugas: anota cada pago en cash el mismo día.</p>`;
+    }
+  }
+  if (!completa) h += `<div class="botones"><button class="btn chico" data-a="verComparacion">Ver comparación completa</button></div>`;
+  return h + `</div>`;
+}
+
+ACC.verComparacion = () => hoja(cabecera('Comparación de gastos') + tarjetaComparar(true));
+
+ACC.ajustarPres = id => {
+  const i = id.lastIndexOf('|');
+  const cat = id.slice(0, i), monto = Number(id.slice(i + 1));
+  if (!cat || !(monto > 0)) return;
+  S.presupuesto = S.presupuesto || {};
+  S.presupuesto[cat] = monto;
+  guardar(); cerrarHoja(); pintar();
+  aviso('Presupuesto de ' + nombreCat(cat) + ': ' + dinero(monto));
+};
+
+
+/************************************************************
+ * PRESUPUESTO SUGERIDO (referencia: promedio de familias en EE. UU.)
+ * Porcentaje aproximado del ingreso que una familia promedio destina a
+ * cada categoría (Encuesta de Gastos del Consumidor del BLS, 2023).
+ ************************************************************/
+
+const REFERENCIA_USA = {
+  'Vivienda': 19, 'Electricidad': 3, 'Agua': 1.2, 'Servicios': 1.2, 'Internet y teléfono': 2.2,
+  'Comida': 7.8, 'Restaurantes': 5.1, 'Transporte': 10, 'Gasolina': 3.5, 'Seguros': 3,
+  'Salud': 8, 'Cuidado personal': 1.3, 'Educación': 2.1, 'Mascotas': 1, 'Diversión': 3.5,
+  'Ropa': 2.6, 'Suscripciones': 1, 'Donaciones': 3.5
+};
+
+ACC.sugerirPresupuesto = () => {
+  const ingreso = suma(S.fijos.filter(f => f.tipo === 'ingreso' && ambitoDe(f) === 'personal'), f => f.monto);
+  if (!ingreso) { aviso('Primero agrega tus ingresos fijos en la pestaña Ingresos'); return; }
+  const form = $('#form');
+  Object.entries(REFERENCIA_USA).forEach(([c, p]) => {
+    if (form.elements[c] && !form.elements[c].value) form.elements[c].value = Math.round(ingreso * p / 100 / 10) * 10;
+  });
+  aviso('Sugerencia con base en ' + dinero(ingreso) + ' al mes. Ajústala a tu realidad.');
+};
+
+/************************************************************
+ * CONCIENCIA: EL COSTO REAL DE CADA DECISIÓN
+ ************************************************************/
+
+/* Ingreso personal al mes: fijos personales o, si no hay, lo que entró este mes */
+function ingresoPersonalMes() {
+  const fijos = suma(S.fijos.filter(f => f.tipo === 'ingreso' && ambitoDe(f) === 'personal'), f => f.monto);
+  if (fijos) return fijos;
+  return suma(S.mov.filter(x => x.tipo === 'ingreso' && ambitoDe(x) === 'personal' && x.fecha.startsWith(mesActual())), x => x.monto);
+}
+/* Valor de una hora de trabajo (≈173 horas al mes) */
+const valorHora = () => ingresoPersonalMes() / 173;
+
+/* Interés promedio de las tarjetas personales con saldo (ponderado por saldo) */
+function aprTarjetas() {
+  const t = S.deudas.filter(d => ambitoDe(d) === 'personal' && d.saldo > 0 && d.apr > 0);
+  const total = suma(t, d => d.saldo);
+  return total ? suma(t, d => d.saldo * d.apr) / total : 0;
+}
+
+/* Lo que un gasto extra mensual cuesta en un año */
+function costoAnual(extraMes) {
+  const anual = r2(extraMes * 12);
+  const vh = valorHora();
+  const apr = aprTarjetas();
+  return {
+    anual,
+    horas: vh > 0 ? Math.round(anual / vh) : null,
+    /* si se paga con tarjeta y no se liquida: el saldo crece mes a mes; en promedio ~mitad del año */
+    intereses: apr > 0 ? r2(anual * apr / 100 / 2) : 0,
+    apr
+  };
+}
+
+function lineaCosto(extraMes) {
+  const c = costoAnual(extraMes);
+  if (c.anual < 60) return '';
+  return `<span class="costo">💡 Si se repite cada mes: <b>${dinero(c.anual)} al año</b>${c.horas ? ` = <b>${c.horas} horas</b> de tu trabajo` : ''}${c.intereses >= 10 ? `, más ≈ <b>${dinero(c.intereses)}</b> de intereses si va a la tarjeta (${c.apr.toFixed(1)}%)` : ''}.</span>`;
+}
+
+
+/************************************************************
+ * SALUD FINANCIERA DE LA CASA (0 a 100)
+ * Como un chequeo médico: cada factor suma puntos y dice en
+ * palabras sencillas cómo te afecta.
+ ************************************************************/
+
+function saludFinanciera() {
+  const p = cifras('personal');
+  const ingreso = ingresoPersonalMes();
+  const factores = [];
+  const agregar = (nombre, puntos, max, bien, mal, valor) =>
+    factores.push({ nombre, puntos, max, ok: puntos >= max * 0.7, texto: puntos >= max * 0.7 ? bien : mal, valor });
+
+  /* 1. Mínimos de deudas ÷ ingreso */
+  if (ingreso > 0) {
+    const carga = p.minimos / ingreso * 100;
+    agregar('Pagos mínimos ÷ ingreso', carga <= 15 ? 20 : carga <= 30 ? 12 : carga <= 50 ? 5 : 0, 20,
+      `Tus mínimos son el ${Math.round(carga)}% de tu ingreso. Tienes margen.`,
+      `Tus mínimos se llevan el ${Math.round(carga)}% de tu ingreso. Cualquier imprevisto termina en atraso o en más tarjeta.`, Math.round(carga) + '%');
+  } else {
+    agregar('Pagos mínimos ÷ ingreso', 5, 20, '', 'Registra tus ingresos fijos para medir cuánto se va en deudas.', '—');
+  }
+
+  /* 2. Uso del crédito */
+  if (p.limite > 0) {
+    agregar('Uso del crédito', p.uso < 30 ? 20 : p.uso < 50 ? 12 : p.uso < 75 ? 5 : 0, 20,
+      `Usas el ${Math.round(p.uso)}% de tu crédito. Eso cuida tu puntaje.`,
+      `Usas el ${Math.round(p.uso)}% de tu crédito. Arriba del 30% baja tu puntaje y sube el riesgo de que te recorten límites.`, Math.round(p.uso) + '%');
+  }
+
+  /* 3. Intereses ÷ ingreso */
+  if (ingreso > 0) {
+    const pi = p.interesMes / ingreso * 100;
+    const horas = valorHora() > 0 ? Math.round(p.interesMes / valorHora()) : null;
+    agregar('Intereses que pagas', pi < 5 ? 15 : pi < 15 ? 8 : 0, 15,
+      `Pagas ≈ ${dinero(Math.round(p.interesMes))} al mes en intereses. Está bajo control.`,
+      `Pagas ≈ ${dinero(Math.round(p.interesMes))} al mes en intereses${horas ? ` = ${horas} horas de tu trabajo cada mes` : ''}. Es dinero que trabajas para el banco.`, dinero(Math.round(p.interesMes)));
+  }
+
+  /* 4. Gastos de la casa vs. presupuesto (proporcional al día del mes) */
+  const plan = presupuestoTotal();
+  const gastado = suma(gastosDeMes(mesActual()).filter(g => ambitoDe(g) === 'personal'), g => g.monto);
+  if (plan > 0) {
+    const dia = new Date().getDate();
+    const diasMes = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
+    const esperado = plan * dia / diasMes;
+    const exceso = esperado > 0 ? (gastado - esperado) / esperado * 100 : 0;
+    agregar('Gastos vs. presupuesto', exceso <= 0 ? 15 : exceso <= 10 ? 8 : 0, 15,
+      `Vas en ${dinero(gastado)} de ${dinero(plan)}: dentro de tu plan para el día ${dia}.`,
+      `Vas en ${dinero(gastado)} y a esta altura del mes deberías ir en ≈ ${dinero(Math.round(esperado))}. Si sigues así te pasarás del presupuesto.`, Math.round(pct(gastado, plan)) + '%');
+  } else {
+    agregar('Gastos vs. presupuesto', 5, 15, '', 'No tienes presupuesto de la casa: sin un plan, el dinero decide por ti.', '—');
+  }
+
+  /* 5. Colchón: meses que aguantas con lo que tienes en el banco */
+  const necesidad = p.gastosFijos + p.minimos + (plan || 0);
+  if (necesidad > 0) {
+    const meses = p.tengo / necesidad;
+    agregar('Colchón de emergencia', meses >= 3 ? 15 : meses >= 1 ? 8 : 0, 15,
+      `Tienes para ≈ ${meses.toFixed(1)} meses de gastos y pagos. Buena protección.`,
+      `Con lo que tienes en el banco aguantas ≈ ${meses.toFixed(1)} meses. Un imprevisto te empuja a la tarjeta.`, meses.toFixed(1) + ' m');
+  }
+
+  /* 6. Fugas y efectivo */
+  const gm = gastosDeMes(mesActual()).filter(g => ambitoDe(g) === 'personal');
+  const tot = suma(gm, g => g.monto);
+  if (tot > 0) {
+    const fugas = suma(gm.filter(g => g.fuga || g.pago === 'efectivo' || g.cat === 'Restaurantes'), g => g.monto);
+    const pf = fugas / tot * 100;
+    agregar('Fugas, efectivo y restaurantes', pf < 10 ? 15 : pf < 25 ? 8 : 0, 15,
+      `Solo el ${Math.round(pf)}% de tus gastos son fugas, efectivo o restaurantes.`,
+      `El ${Math.round(pf)}% de lo que gastas este mes (${dinero(fugas)}) es fuga, efectivo o restaurante: ahí es donde más se escapa el dinero.`, Math.round(pf) + '%');
+  }
+
+  const max = suma(factores, f => f.max);
+  const puntos = suma(factores, f => f.puntos);
+  const nota = max ? Math.round(puntos / max * 100) : 0;
+  const nivel = nota >= 75 ? ['Saludable', 'verde'] : nota >= 50 ? ['Estable, con alertas', 'amarillo'] : nota >= 25 ? ['En riesgo', 'rojo'] : ['Crítica', 'rojo'];
+  return { nota, nivel: nivel[0], color: nivel[1], factores };
+}
+
+function tarjetaSalud() {
+  if (!S.deudas.length && !S.fijos.length && !S.mov.length) return '';
+  const s = saludFinanciera();
+  const malos = s.factores.filter(f => !f.ok);
+  const buenos = s.factores.filter(f => f.ok);
+  const colorAnillo = s.color === 'verde' ? '' : 'rojo';
+  return `<div class="seccion"><h2>Salud financiera</h2></div>
+  <div class="card hero">
+    <div class="cuerpo">
+      <div class="cifras">
+        <div><span>Tu casa hoy</span><b class="${s.color}">${esc(s.nivel)}</b></div>
+        <div><span>Lo que la daña</span><b>${malos.length} ${malos.length === 1 ? 'factor' : 'factores'}</b></div>
+        <div><span>Lo que la ayuda</span><b>${buenos.length} ${buenos.length === 1 ? 'factor' : 'factores'}</b></div>
+      </div>
+      ${anillo(s.nota / 100, `<b class="${s.color}">${s.nota}</b><small>de 100</small>`, colorAnillo === 'rojo' && s.nota < 50)}
+    </div>
+    <ul class="factores">${[...malos, ...buenos].map(f => `
+      <li class="${f.ok ? 'ok' : 'mal'}"><b>${f.ok ? '✓' : '⚠'} ${esc(f.nombre)} <span>${esc(f.valor)}</span></b>${esc(f.texto)}</li>`).join('')}</ul>
+    <p class="ayuda">Cada decisión mueve esta nota: pagar más que el mínimo, no usar la tarjeta para lo que no puedes pagar este mes y anotar el efectivo la suben.</p>
+  </div>`;
+}
 
 /************************************************************
  * PERSONAL | NEGOCIO | TODO
@@ -2103,13 +2461,14 @@ function formMov(tipo, m) {
     ...campoCuenta(gasto ? '¿De dónde salió?' : '¿A dónde entró?'),
     ...campoAmbito()
   ];
+  if (gasto) campos.splice(2, 0, { n: 'pago', t: 'select', l: '¿Cómo pagaste?', ops: Object.entries(FORMAS_PAGO) });
   if (gasto) campos.push({ n: 'fuga', t: 'check', l: 'Es una fuga: pude no haberlo gastado' });
   if (!m) campos.push({ n: 'repite', t: 'check', l: 'Se repite cada mes (guardarlo como fijo)' });
 
   formulario({
     titulo: (m ? 'Editar ' : 'Nuevo ') + tipo,
     campos,
-    valores: m || { fecha: hoy(), cuenta: cuentaPorDefecto(), ambito: ambitoPorDefecto() },
+    valores: m || { fecha: hoy(), cuenta: cuentaPorDefecto(), ambito: ambitoPorDefecto(), pago: S.perfil.ultimoPago || 'credito' },
     extra: gasto ? `
       <div class="campo"><span>Foto de la factura (opcional)</span>
         <div id="fotoZona"></div>
@@ -2211,6 +2570,7 @@ function formMov(tipo, m) {
         if (v.fecha.slice(0, 7) <= mesActual()) mesVer = v.fecha.slice(0, 7);
       }
       if (v.cuenta) S.perfil.ultimaCuenta = v.cuenta;
+      if (v.pago) S.perfil.ultimoPago = v.pago;
     }
   });
 }
@@ -2363,9 +2723,15 @@ function abrirAjustes() {
         <p class="ayuda">Si escribes el nombre de tu negocio, puedes separar todo en Personal y Negocio y ver los dos panoramas.</p></div>
     </form>
 
+    <p class="grupo-titulo">Apariencia</p>
+    <div class="segmento tres">
+      ${[['oscuro', '🌙 Oscuro'], ['claro', '☀️ Claro'], ['auto', '📱 Auto']].map(([k, t]) => `<button type="button" data-a="tema" data-id="${k}" class="${(S.perfil.tema || 'oscuro') === k ? 'activo' : ''}">${t}</button>`).join('')}
+    </div>
+
     <p class="grupo-titulo">General</p>
     <div class="grupo">
       ${filaAjuste({ a: 'ir', id: 'ingresos', ic: 'ingresos', titulo: 'Ingresos', sub: 'Fuentes de ingreso y cobros del mes' })}
+      ${filaAjuste({ a: 'categorias', ic: 'pyg', titulo: 'Categorías de gastos', sub: Object.keys(S.catsPropias || {}).length ? Object.keys(S.catsPropias).length + ' propias · agrega productos o servicios' : 'Agrega productos o servicios' })}
       ${filaAjuste({ a: 'editarPresupuesto', ic: 'casa', titulo: 'Presupuesto de la casa', sub: presupuestoTotal() ? dinero(presupuestoTotal()) + ' al mes' : 'Sin definir' })}
       ${filaAjuste({ a: 'subirEstado', ic: 'banco', titulo: 'Estados de cuenta', sub: S.cuentas.length ? S.cuentas.length + (S.cuentas.length === 1 ? ' cuenta' : ' cuentas') + ' · ' + dinero(suma(S.cuentas, c => c.saldo)) : 'Actualiza el saldo de tus bancos' })}
       ${conNegocio() ? filaAjuste({ a: 'subirPyG', ic: 'pyg', titulo: 'P&L del negocio', sub: S.pyg.length ? S.pyg.length + ' periodo(s) registrados' : 'Sube el estado de resultados' }) : ''}
@@ -2377,7 +2743,7 @@ function abrirAjustes() {
       ${filaAjuste({ a: 'restaurar', ic: 'subir', titulo: 'Recuperar copia', sub: 'Carga un archivo de respaldo (.json)' })}
       ${filaAjuste({ a: 'compartir', ic: 'compartir', titulo: 'Compartir la app', sub: 'Cada persona tiene sus propios datos' })}
     </div>
-    <input type="file" id="archivo" accept="application/json,.json" hidden>
+    <input type="file" id="archivo" hidden>
 
     <p class="grupo-titulo">App</p>
     <div class="grupo">
@@ -2558,6 +2924,394 @@ document.addEventListener('visibilitychange', () => {
 
 
 /************************************************************
+ * TEMA: OSCURO | CLARO | AUTOMÁTICO
+ ************************************************************/
+
+function aplicarTema() {
+  const t = S.perfil.tema || 'oscuro';
+  document.documentElement.dataset.tema = t;
+  const claro = t === 'claro' || (t === 'auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches);
+  const m = document.querySelector('meta[name="theme-color"]');
+  if (m) m.content = claro ? '#d6e9f7' : '#14304a';
+}
+ACC.tema = id => { S.perfil.tema = id; aplicarTema(); guardar(); abrirAjustes(); };
+
+
+/************************************************************
+ * HISTORIAL MENSUAL Y CICLOS DE 90 DÍAS
+ * Cada mes se guarda una "foto" de los totales para comparar
+ * (como el cierre de la bolsa) y para el resumen del ciclo.
+ ************************************************************/
+
+function fotoActual() {
+  const de = a => r2(suma(S.deudas.filter(d => ambitoDe(d) === a), d => d.saldo));
+  const cu = a => r2(suma(S.cuentas.filter(c => ambitoDe(c) === a), c => c.saldo));
+  const deudaP = de('personal'), deudaN = de('negocio');
+  const cuentasP = cu('personal'), cuentasN = cu('negocio');
+  return {
+    deuda: r2(deudaP + deudaN), deudaP, deudaN,
+    cuentas: r2(cuentasP + cuentasN), cuentasP, cuentasN,
+    ahorro: r2(ahorroTotal()), fecha: hoy()
+  };
+}
+
+const mesDelCiclo = () => Math.min(3, Math.floor((programa().dia - 1) / 30) + 1);
+
+function registrarFoto() {
+  if (!S.historial || typeof S.historial !== 'object') S.historial = {};
+  S.historial[mesActual()] = fotoActual();
+  if (!S.perfil.inicio) return;
+  if (!S.ciclo || !S.ciclo.base) {
+    S.ciclo = { n: (S.ciclos || []).length + 1, inicio: S.perfil.inicio, base: fotoActual(), cortes: {} };
+  }
+  S.ciclo.inicio = S.perfil.inicio;
+  S.ciclo.cortes = S.ciclo.cortes || {};
+  const m = mesDelCiclo();
+  if (!S.ciclo.cortes[m]) S.ciclo.cortes[m] = fotoActual();
+}
+
+/* Valores de la foto según la vista elegida */
+const deFoto = (f, campo) => {
+  if (!f) return null;
+  const v = vistaElegida();
+  if (v === 'personal') return f[campo + 'P'] ?? f[campo];
+  if (v === 'negocio') return f[campo + 'N'] ?? 0;
+  return f[campo];
+};
+
+const mesAnterior = (m = mesActual()) => { const d = aFecha(m + '-01'); d.setMonth(d.getMonth() - 1); return iso(d).slice(0, 7); };
+
+/* Referencia para comparar: el cierre del mes anterior o, si no existe, el inicio del ciclo */
+function fotoReferencia() {
+  const prev = S.historial && S.historial[mesAnterior()];
+  if (prev) return { foto: prev, etq: 'vs ' + nombreMes(mesAnterior()).split(' ')[0].toLowerCase() };
+  if (S.ciclo && S.ciclo.base && S.ciclo.base.fecha !== hoy()) return { foto: S.ciclo.base, etq: 'vs inicio del ciclo' };
+  return { foto: null, etq: 'primer mes' };
+}
+
+
+/************************************************************
+ * INDICADORES TIPO BOLSA (▲ ▼ en verde o rojo)
+ * Verde = se movió en la dirección buena para tu bolsillo.
+ ************************************************************/
+
+function cambioPct(actual, antes) {
+  if (antes === null || antes === undefined) return null;
+  if (!antes) return actual ? null : 0;
+  return (actual - antes) / Math.abs(antes) * 100;
+}
+
+function chip(c, bueno) {
+  if (c === null) return '<span class="ind neutro">nuevo</span>';
+  const sube = c > 0.05, baja = c < -0.05;
+  if (!sube && !baja) return '<span class="ind neutro">= 0.0%</span>';
+  const bien = (sube && bueno === 'sube') || (baja && bueno === 'baja');
+  return `<span class="ind ${bien ? 'bien' : 'mal'}">${sube ? '▲' : '▼'} ${Math.abs(c).toFixed(1)}%</span>`;
+}
+
+function indicadores() {
+  const ref = fotoReferencia();
+  const r = resumen(mesActual());
+  const rp = resumen(mesAnterior());
+  const etqMes = 'vs ' + nombreMes(mesAnterior()).split(' ')[0].toLowerCase();
+  const lista = [
+    { nombre: 'Deuda total', icono: '💳', valor: deudaTotal(), antes: deFoto(ref.foto, 'deuda'), bueno: 'baja', etq: ref.etq },
+    { nombre: 'Dinero en cuentas', icono: '🏦', valor: dineroEnCuentas(), antes: deFoto(ref.foto, 'cuentas'), bueno: 'sube', etq: ref.etq },
+    { nombre: 'Ingresos del mes', icono: '💵', valor: r.ingresos, antes: rp.lista.length ? rp.ingresos : null, bueno: 'sube', etq: etqMes },
+    { nombre: 'Gastos del mes', icono: '🛒', valor: r.gastos, antes: rp.lista.length ? rp.gastos : null, bueno: 'baja', etq: etqMes },
+    { nombre: 'Pagado a deudas', icono: '✅', valor: r.pagos, antes: rp.lista.length ? rp.pagos : null, bueno: 'sube', etq: etqMes }
+  ];
+  if (vistaElegida() !== 'negocio') {
+    lista.push({ nombre: 'Ahorro', icono: '🐖', valor: ahorroTotal(), antes: ref.foto ? ref.foto.ahorro : null, bueno: 'sube', etq: ref.etq });
+  }
+  if (conNegocio() && vistaElegida() !== 'personal' && S.pyg.length >= 1) {
+    const orden = S.pyg.slice().sort((a, b) => b.mes.localeCompare(a.mes));
+    const u = p => (p.ingresos - p.gastos) / (p.meses || 1);
+    lista.push({ nombre: 'Utilidad del negocio', icono: '📊', valor: r2(u(orden[0])), antes: orden[1] ? r2(u(orden[1])) : null, bueno: 'sube', etq: 'vs P&L anterior', mensual: true });
+  }
+  return lista;
+}
+
+function tarjetaIndicadores(max) {
+  const lista = indicadores().slice(0, max || 99);
+  return `<div class="card ticker">` + lista.map(i => {
+    const c = cambioPct(i.valor, i.antes);
+    return `<div class="tick">
+      <span class="punto">${i.icono}</span>
+      <span class="txt"><b>${esc(i.nombre)}</b><span>${esc(i.etq)}${i.antes !== null && i.antes !== undefined ? ' · ' + dinero(i.antes) : ''}</span></span>
+      <span class="der"><b>${dinero(i.valor)}${i.mensual ? '<small>/mes</small>' : ''}</b>${chip(c, i.bueno)}</span>
+    </div>`;
+  }).join('') + `<p class="ayuda" style="margin-top:10px"><span class="ind bien">▲▼</span> verde = va bien para tu bolsillo · <span class="ind mal">▲▼</span> rojo = cuidado</p></div>`;
+}
+
+
+/************************************************************
+ * GRÁFICAS (SVG, sin librerías)
+ ************************************************************/
+
+const etqCorta = m => aFecha(m + '-01').toLocaleDateString('es', { month: 'short' }).replace('.', '');
+const compacto = n => {
+  const a = Math.abs(n);
+  const t = a >= 1e6 ? (a / 1e6).toFixed(1) + 'M' : a >= 1e3 ? (a / 1e3).toFixed(a >= 1e4 ? 0 : 1) + 'k' : String(Math.round(a));
+  return (n < 0 ? '-' : '') + S.perfil.moneda + t;
+};
+
+function graficaLinea(puntos, { color = 'var(--cyan)', bueno = 'baja' } = {}) {
+  if (puntos.length < 2) {
+    return `<p class="chico muted" style="margin:0">La gráfica se llena mes a mes. Vuelve el próximo mes para ver la tendencia.</p>`;
+  }
+  const W = 320, H = 150, px = 14, top = 18, bot = 26;
+  const vals = puntos.map(p => p.v);
+  let min = Math.min(...vals), max = Math.max(...vals);
+  if (max === min) { max += 1; min -= 1; }
+  const x = i => px + i * (W - 2 * px) / (puntos.length - 1);
+  const y = v => top + (max - v) * (H - top - bot) / (max - min);
+  const linea = puntos.map((p, i) => `${x(i).toFixed(1)},${y(p.v).toFixed(1)}`).join(' ');
+  const area = `${x(0)},${H - bot} ${linea} ${x(puntos.length - 1)},${H - bot}`;
+  const c = cambioPct(vals[vals.length - 1], vals[0]);
+  const id = 'g' + Math.random().toString(36).slice(2, 7);
+  return `<div class="grafica">
+    <div class="fila" style="margin-bottom:4px"><b>${dinero(vals[vals.length - 1])}</b>${chip(c, bueno)}</div>
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img">
+      <defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${color}" stop-opacity=".35"/><stop offset="1" stop-color="${color}" stop-opacity="0"/></linearGradient></defs>
+      <polygon points="${area}" fill="url(#${id})"/>
+      <polyline points="${linea}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
+      ${puntos.map((p, i) => `<circle cx="${x(i)}" cy="${y(p.v)}" r="3.5" fill="${color}"/>`).join('')}
+    </svg>
+    <div class="ejes">${puntos.map(p => `<span>${esc(p.etq)}</span>`).join('')}</div>
+  </div>`;
+}
+
+function graficaBarras(meses) {
+  const max = Math.max(1, ...meses.flatMap(m => [m.a, m.b]));
+  return `<div class="barras">` + meses.map(m => `
+    <div class="col">
+      <div class="par">
+        <i class="a" style="height:${pct(m.a, max)}%" title="Ingresos ${dinero(m.a)}"></i>
+        <i class="b" style="height:${pct(m.b, max)}%" title="Gastos ${dinero(m.b)}"></i>
+      </div>
+      <span>${esc(m.etq)}</span>
+    </div>`).join('') + `</div>
+    <div class="leyenda"><span><i class="a"></i>Ingresos</span><span><i class="b"></i>Gastos</span></div>`;
+}
+
+function ultimosMeses(n) {
+  const lista = [];
+  let m = mesActual();
+  for (let i = 0; i < n; i++) { lista.unshift(m); m = mesAnterior(m); }
+  return lista;
+}
+
+function tarjetasGraficas() {
+  const meses = ultimosMeses(6);
+  const puntosDeuda = meses.filter(m => S.historial && S.historial[m])
+    .map(m => ({ etq: etqCorta(m), v: deFoto(S.historial[m], 'deuda') }));
+  if (S.ciclo && S.ciclo.base && !puntosDeuda.length) puntosDeuda.push({ etq: 'inicio', v: deFoto(S.ciclo.base, 'deuda') });
+  const flujo = meses.map(m => { const r = resumen(m); return { etq: etqCorta(m), a: r.ingresos, b: r.gastos + r.pagos }; });
+  const neto = flujo.map(f => f.a - f.b);
+  return `
+  <div class="card"><h2>📉 Tu deuda mes a mes</h2>${graficaLinea(puntosDeuda, { color: 'var(--cyan)', bueno: 'baja' })}</div>
+  <div class="card"><h2>💵 Entra vs. sale</h2>${graficaBarras(flujo)}
+    <p class="ayuda">"Sale" incluye gastos y pagos a deudas. Este mes: <b class="${neto[neto.length - 1] < 0 ? 'rojo' : 'verde'}">${dinero(neto[neto.length - 1])}</b> de diferencia.</p></div>`;
+}
+
+
+/************************************************************
+ * RETO DEL MES (uno por cada mes del ciclo de 90 días)
+ ************************************************************/
+
+const RETOS_MES = [
+  {
+    n: 1, titulo: 'Ordena tu mapa',
+    texto: 'Registra todo lo que tienes y todo lo que debes. Sin mapa no hay plan.',
+    progreso: () => {
+      const pasos = [
+        ['Tus deudas registradas', S.deudas.length > 0],
+        ['Tus ingresos fijos', S.fijos.some(f => f.tipo === 'ingreso')],
+        ['Presupuesto de la casa', presupuestoTotal() > 0],
+        ['Saldos de tus bancos al día', S.cuentas.some(c => c.actualizada && diasEntre(c.actualizada, hoy()) <= 35)]
+      ];
+      if (conNegocio()) pasos.push(['P&L del negocio', S.pyg.length > 0]);
+      const hechos = pasos.filter(p => p[1]).length;
+      return { val: hechos, meta: pasos.length, txt: hechos + ' de ' + pasos.length + ' pasos', pasos };
+    }
+  },
+  {
+    n: 2, titulo: 'Baja tu deuda 3%',
+    texto: 'Paga más que el mínimo en tu deuda prioritaria y no cargues nada nuevo a las tarjetas.',
+    progreso: () => {
+      const ini = S.ciclo && S.ciclo.cortes && S.ciclo.cortes[2] ? S.ciclo.cortes[2].deuda : null;
+      if (!ini) return { val: 0, meta: 3, txt: 'Empieza en el mes 2 del ciclo' };
+      const bajo = Math.max(0, (ini - fotoActual().deuda) / ini * 100);
+      return { val: r2(bajo), meta: 3, txt: 'Has bajado ' + bajo.toFixed(1) + '% de 3% (' + dinero(Math.max(0, ini - fotoActual().deuda)) + ')' };
+    }
+  },
+  {
+    n: 3, titulo: 'Arma tu colchón',
+    texto: 'Aparta para tu fondo de protección al menos un mes de pagos mínimos.',
+    progreso: () => {
+      const base = S.ciclo && S.ciclo.cortes && S.ciclo.cortes[3] ? S.ciclo.cortes[3].ahorro : null;
+      const meta = r2(Math.max(500, suma(S.deudas.filter(d => d.saldo > 0), d => d.minimo)));
+      if (base === null) return { val: 0, meta, txt: 'Empieza en el mes 3 del ciclo' };
+      const val = r2(Math.max(0, ahorroTotal() - base));
+      return { val, meta, txt: dinero(val) + ' de ' + dinero(meta) };
+    }
+  }
+];
+
+function tarjetaRetoMes(r, compacta) {
+  const actual = mesDelCiclo();
+  const futuro = r.n > actual;
+  const hecho = S.retosMes && S.retosMes[r.n];
+  const p = r.progreso();
+  const listo = p.val >= p.meta;
+  let h = `<div class="card reto ${hecho ? 'hecho' : r.n === actual ? 'actual' : futuro ? 'futuro' : ''}">
+    <span class="num">Reto del mes ${r.n} de 3${r.n === actual && !hecho ? ' · este mes' : ''}</span>
+    <h3>${hecho ? '🏆 ' : futuro ? '🔒 ' : '🎯 '}${esc(r.titulo)}</h3>
+    <p>${esc(r.texto)}</p>`;
+  if (!futuro && !hecho) {
+    h += `<div class="barra"><i style="width:${pct(p.val, p.meta)}%"></i></div><span class="chico muted">${esc(p.txt)}</span>`;
+    if (!compacta && p.pasos) h += `<ul class="pasos">${p.pasos.map(s => `<li class="${s[1] ? 'ok' : ''}">${s[1] ? '✓' : '○'} ${esc(s[0])}</li>`).join('')}</ul>`;
+    h += `<div class="botones"><button class="btn chico principal" data-a="cumplirRetoMes" data-id="${r.n}" ${listo ? '' : 'disabled'}>¡Lo logré!</button>
+      ${compacta ? '<button class="btn chico" data-a="verRetos">Ver progreso</button>' : ''}</div>`;
+  } else if (hecho) {
+    h += `<p class="chico verde" style="margin-top:8px"><b>Logrado el ${esc(fechaCorta(hecho))}</b></p>`;
+  }
+  return h + `</div>`;
+}
+
+ACC.cumplirRetoMes = id => {
+  S.retosMes = S.retosMes || {};
+  S.retosMes[id] = hoy();
+  guardar(); pintar(); aviso('🏆 ¡Reto del mes logrado!');
+};
+
+
+/************************************************************
+ * FIN DEL CICLO: RESUMEN Y NUEVO CICLO DE 90 DÍAS
+ ************************************************************/
+
+function resumenCiclo() {
+  const c = S.ciclo || { n: 1, inicio: S.perfil.inicio, base: fotoActual() };
+  const ini = c.inicio || S.perfil.inicio || hoy();
+  const fin = sumarDias(ini, DIAS_PROGRAMA - 1);
+  const enC = x => x.fecha >= ini && x.fecha <= fin;
+  const ahora = fotoActual();
+  const movs = S.mov.filter(enC);
+  return {
+    n: c.n || 1, inicio: ini, fin, cerrado: hoy(),
+    deudaIni: c.base.deuda, deudaFin: ahora.deuda,
+    cuentasIni: c.base.cuentas, cuentasFin: ahora.cuentas,
+    ahorroIni: c.base.ahorro, ahorroFin: ahora.ahorro,
+    pagado: r2(suma(S.pagos.filter(enC), p => p.monto)),
+    ingresos: r2(suma(movs.filter(x => x.tipo === 'ingreso'), x => x.monto)),
+    gastos: r2(suma(movs.filter(x => x.tipo === 'gasto'), x => x.monto)),
+    fugas: r2(suma(movs.filter(x => x.tipo === 'gasto' && x.fuga), x => x.monto)),
+    retos: RETOS.filter(r => S.retos[r.n]).length,
+    retosMes: Object.keys(S.retosMes || {}).length,
+    checkins: Object.keys(S.checkins || {}).length
+  };
+}
+
+function htmlResumen(r) {
+  const bajoDeuda = r.deudaIni - r.deudaFin;
+  const fila = (ic, t, v, extra) => `<li><span class="punto">${ic}</span><span class="txt"><b>${t}</b>${extra ? `<span>${extra}</span>` : ''}</span><span class="monto">${v}</span></li>`;
+  return `<ul class="lista">
+    ${fila('💳', bajoDeuda >= 0 ? 'Bajaste tu deuda' : 'Tu deuda subió', dinero(Math.abs(bajoDeuda)) + ' ' + chip(cambioPct(r.deudaFin, r.deudaIni), 'baja'), dinero(r.deudaIni) + ' → ' + dinero(r.deudaFin))}
+    ${fila('✅', 'Pagaste a deudas', dinero(r.pagado))}
+    ${fila('🏦', 'Dinero en cuentas', dinero(r.cuentasFin) + ' ' + chip(cambioPct(r.cuentasFin, r.cuentasIni), 'sube'), dinero(r.cuentasIni) + ' → ' + dinero(r.cuentasFin))}
+    ${fila('🐖', 'Ahorro', dinero(r.ahorroFin) + ' ' + chip(cambioPct(r.ahorroFin, r.ahorroIni), 'sube'))}
+    ${fila('💵', 'Entró / salió', dinero(r.ingresos) + ' / ' + dinero(r.gastos), r.fugas ? 'Fugas detectadas: ' + dinero(r.fugas) : '')}
+    ${fila('🏆', 'Retos', r.retos + '/' + SEMANAS + ' semanales · ' + r.retosMes + '/3 del mes', r.checkins + ' check-ins')}
+  </ul>`;
+}
+
+function leccionesCiclo(r) {
+  const l = [];
+  if (r.deudaFin < r.deudaIni) l.push('Vas en la dirección correcta: tu deuda bajó. En el próximo ciclo sube el "extra" del plan de salida.');
+  else l.push('Tu deuda no bajó. En el próximo ciclo: cero compras nuevas con tarjeta y todo el extra a la deuda prioritaria.');
+  if (r.fugas > 0) l.push('Tuviste ' + dinero(r.fugas) + ' en fugas. Elige una y elimínala desde la semana 1.');
+  if (r.retos < SEMANAS / 2) l.push('Cumpliste menos de la mitad de los retos. Pon una alarma semanal para tu check-in.');
+  if (r.cuentasFin <= r.cuentasIni) l.push('Tu dinero en cuentas no creció. Automatiza una transferencia al ahorro el día que cobras.');
+  return l;
+}
+
+function tarjetaFinCiclo() {
+  if (!S.perfil.inicio || !programa().terminado) return '';
+  const r = resumenCiclo();
+  return `<div class="card semaforo green">
+    <h2>🏁 ¡Terminaste tu ciclo ${r.n} de 90 días!</h2>
+    <p class="chico muted" style="margin:0 0 6px">${esc(fechaCorta(r.inicio))} – ${esc(fechaCorta(r.fin))}. Esto es lo que lograste:</p>
+    ${htmlResumen(r)}
+    <h2 style="margin-top:14px">Para tu próximo ciclo</h2>
+    <ul class="consejos">${leccionesCiclo(r).map(t => `<li>${esc(t)}</li>`).join('')}</ul>
+    <div class="botones"><button class="btn principal" data-a="nuevoCiclo">🚀 Guardar y empezar el ciclo ${r.n + 1}</button></div>
+  </div>`;
+}
+
+ACC.nuevoCiclo = () => {
+  const r = resumenCiclo();
+  hoja(`${cabecera('Empezar el ciclo ' + (r.n + 1))}
+    <p class="ayuda">Se guarda el resumen del ciclo ${r.n}. Tus tarjetas, cuentas, ingresos y movimientos se quedan; los retos y check-ins vuelven a empezar.</p>
+    <div class="botones"><button class="btn principal" data-a="confirmarCiclo">Empezar ciclo ${r.n + 1}</button></div>`);
+};
+
+ACC.confirmarCiclo = () => {
+  const r = resumenCiclo();
+  S.ciclos = S.ciclos || [];
+  S.ciclos.push(r);
+  S.perfil.inicio = hoy();
+  S.retos = {};
+  S.checkins = {};
+  S.retosMes = {};
+  S.ciclo = null;
+  registrarFoto();
+  guardar(); cerrarHoja(); ir('retos');
+  aviso('🚀 ¡Ciclo ' + (r.n + 1) + ' en marcha!');
+};
+
+function tarjetaCiclos() {
+  if (!S.ciclos || !S.ciclos.length) return '';
+  return `<div class="seccion"><h2>Ciclos anteriores</h2></div>` + S.ciclos.slice().reverse().map(r => `
+    <div class="card"><h2>Ciclo ${r.n} <small>· ${esc(fechaCorta(r.inicio))} – ${esc(fechaCorta(r.fin))} ${r.inicio.slice(0, 4)}</small></h2>${htmlResumen(r)}</div>`).join('');
+}
+
+
+/************************************************************
+ * VISTA: PROGRESO (ciclo, indicadores, gráficas y retos)
+ ************************************************************/
+
+function vistaProgreso() {
+  const p = programa();
+  const c = S.ciclo || { n: 1 };
+  const semanas = RETOS.filter(r => S.retos[r.n]).length;
+  const meses = Object.keys(S.retosMes || {}).length;
+  const etapa = (RETOS[p.semana - 1] || {}).etapa || '';
+  let h = selectorVista();
+
+  h += `<div class="seccion"><h2>Tu ciclo ${c.n || 1}</h2></div>
+  <div class="card hero">
+    <div class="cuerpo">
+      <div class="cifras">
+        <div><span>Etapa</span><b>${esc(etapa.charAt(0) + etapa.slice(1).toLowerCase())}</b></div>
+        <div><span>Retos de la semana</span><b>${semanas} de ${SEMANAS}</b></div>
+        <div><span>Retos del mes</span><b>${meses} de 3</b></div>
+      </div>
+      ${anillo(p.dia / DIAS_PROGRAMA, `<b>Día ${p.dia}</b><small>de ${DIAS_PROGRAMA}</small>`)}
+    </div>
+    ${S.perfil.inicio ? `<p class="ayuda centro" style="margin-top:12px">${esc(fechaCorta(S.perfil.inicio))} – ${esc(fechaCorta(sumarDias(S.perfil.inicio, DIAS_PROGRAMA - 1)))}</p>` : ''}
+  </div>`;
+
+  h += tarjetaFinCiclo();
+  h += `<div class="seccion"><h2>Indicadores</h2></div>` + tarjetaIndicadores();
+  h += `<div class="seccion"><h2>Desempeño</h2></div>` + tarjetasGraficas() + tarjetaComparar(true);
+  h += `<div class="seccion"><h2>Retos del mes</h2></div>` + RETOS_MES.map(r => tarjetaRetoMes(r)).join('');
+  h += `<div class="seccion"><h2>Retos de la semana</h2></div>` + vistaRetos();
+  h += tarjetaCiclos();
+  return h;
+}
+
+/************************************************************
  * BIENVENIDA
  ************************************************************/
 
@@ -2584,6 +3338,9 @@ function bienvenida() {
  * ARRANQUE
  ************************************************************/
 
+aplicarTema();
+if (window.matchMedia) window.matchMedia('(prefers-color-scheme: light)').addEventListener?.('change', aplicarTema);
+try { registrarFoto(); guardar(); } catch (e) { /* sin almacenamiento */ }
 pintar();
 if (!S.perfil.inicio) bienvenida();
 else if (S.perfil.saludoDia !== hoy()) {
