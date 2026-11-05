@@ -1,6 +1,6 @@
 /* Permite abrir la app sin señal: primero intenta la red (siempre la versión más reciente) y, si falla, usa la copia guardada. */
 
-const CACHE = 'cff-13';
+const CACHE = 'cff-14';
 const ARCHIVOS = ['./', 'index.html', 'styles.css', 'app.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-180.png'];
 
 self.addEventListener('install', e => {

@@ -8,7 +8,7 @@
  ************************************************************/
 
 /* Al publicar un cambio: subir este número y el de version.json (deben ser iguales) */
-const VERSION = '0.17.1';
+const VERSION = '0.17.2';
 const BETA = true; /* quitar en el lanzamiento oficial */
 
 const CLAVE = 'cff.v1';
@@ -926,7 +926,7 @@ function tarjetaDisponible() {
   const prox = proximoIngreso();
   const pastilla = prox
     ? `Antes del día de pago ${esc(fechaCorta(sumarDias(hoy(), prox.faltan)))}`
-    : 'Agrega tus ingresos para proyectar';
+    : (fijosV().some(f => f.tipo === 'ingreso' && f.monto > 0) ? 'Ponle día de cobro a tus ingresos' : 'Agrega tus ingresos para proyectar');
 
   return `<div class="card hero">
     <div class="cuerpo">
@@ -1696,9 +1696,11 @@ ACC.sugerirPresupuesto = () => {
   const ingreso = suma(S.fijos.filter(f => f.tipo === 'ingreso' && ambitoDe(f) === 'personal'), f => f.monto);
   if (!ingreso) { aviso('Primero agrega tus ingresos fijos en la pestaña Ingresos'); return; }
   const form = $('#form');
-  Object.entries(REFERENCIA_USA).forEach(([c, p]) => {
-    if (form.elements[c] && !form.elements[c].value) form.elements[c].value = Math.round(ingreso * p / 100 / 10) * 10;
+  const lista = Object.keys(REFERENCIA_USA).filter(c => form.elements[c]).map(c => {
+    const actual = num(form.elements[c].value);
+    return { cat: c, valor: actual || Math.round(ingreso * REFERENCIA_USA[c] / 100 / 10) * 10, fijo: 0, propio: !!actual };
   });
+  ajustarAlIngreso(lista, ingreso).forEach(x => { if (!x.propio) form.elements[x.cat].value = x.valor; });
   aviso('Sugerencia con base en ' + dinero(ingreso) + ' al mes. Ajústala a tu realidad.');
 };
 
@@ -1931,7 +1933,7 @@ ACC.calendarioCompartir = async () => {
 
 /* Reglas incluidas: texto del comercio → categoría (y ámbito si es claramente del negocio) */
 const REGLAS_BASE = [
-  [/SHELL|EXXON|CHEVRON|\bBP\b|SUNOCO|MARATHON|WAWA|RACETRAC|CITGO|SPEEDWAY|MOBIL|VALERO|CIRCLE K|7-ELEVEN.*FUEL|MURPHY|QT\b|QUIKTRIP|ULTRA TOP FUEL|GAS SE|FUEL/, 'Gasolina'],
+  [/SHELL|EXXON|CHEVRON|\bBP\b|SUNOCO|MARATHON|WAWA|RACETRAC|CITGO|SPEEDWAY|\bMOBIL\b|VALERO|CIRCLE K|7-ELEVEN.*FUEL|MURPHY|QT\b|QUIKTRIP|ULTRA TOP FUEL|GAS SE|FUEL/, 'Gasolina'],
   [/PUBLIX|WAL-?MART(?!.*GAS)|KROGER|ALDI|COSTCO|TARGET|WHOLE ?FOODS|SAMS ?CLUB|WINN.?DIXIE|TRADER JOE|SEDANO|FRESCO|FOOD ?LION|HEB\b|SPROUTS|SUPERMARKET|GROCERY/, 'Comida'],
   [/MCDONALD|STARBUCKS|RESTAURANT|GRILL|PIZZA|TACO|CHIPOTLE|WENDY|BURGER|DOORDASH|UBER ?\*? ?EATS|GRUBHUB|STEAK|KPOT|CAFE|BBQ|DUNKIN|CHICK-?FIL|SUBWAY|PANERA|OLIVE GARDEN|LONGHORN|TST\*|SQ \*|DENNY|IHOP|POPEYES|KFC/, 'Restaurantes'],
   [/DUKE ENERGY|TECO|\bFPL\b|FLORIDA POWER|ELECTRIC|ENERGY|POWER CO|WITHLACOOCHEE|SECO ENERGY/, 'Electricidad'],
@@ -1950,6 +1952,9 @@ const REGLAS_BASE = [
 ];
 
 const PATRON_PAGO = /PAYMENT|THANK YOU|PAGO|AUTOPAY|AUTO ?PAY|ONLINE PMT|E-?PAYMENT|CREDIT CRD|CRD EPAY|CARD PMT/i;
+/* En una cuenta de banco, "PAYMENT" solo es pago de tarjeta si va a un banco o tarjeta;
+   "DUKE ENERGY PAYMENT" o "GEICO PAYMENT" son gastos reales de la casa. */
+const PATRON_PAGO_TARJETA = /AMEX|AMERICAN EXPRESS|CHASE|CAPITAL ?ONE|CAP ONE|DISCOVER|CITI|BARCLAY|SYNCHRONY|CARD|CRD|BANK OF AMERICA|BK OF AM|BOFA|WELLS FARGO|WF CREDIT|APPLECARD|GS BANK|GOLDMAN|US BANK|NAVY FED|CREDIT ONE|MERRICK|SYF|COMENITY/i;
 const PATRON_INGRESO = /PAYROLL|DIRECT DEP|DEPOSIT|DEP\b|ZELLE FROM|TRANSFER FROM|INTEREST|REFUND|REEMBOLSO|STRIPE|SQUARE INC|PAYPAL TRANSFER/i;
 
 /* Lee CSV (comas, comillas dobles) */
@@ -2079,7 +2084,8 @@ function revisarImportacion() {
     const gasto = Math.sign(x.monto) === imp.signoGasto;
     const ref = x.fecha + '|' + Math.abs(x.monto).toFixed(2) + '|' + x.desc.slice(0, 24).toUpperCase();
     let tipo = gasto ? 'gasto' : 'ingreso', motivo = '';
-    if (PATRON_PAGO.test(x.desc) && (esTarjeta ? !gasto : gasto)) { tipo = 'omitir'; motivo = esTarjeta ? 'pago a la tarjeta' : 'pago de tarjeta (ya cuenta en Deudas)'; }
+    const pagoDeTarjeta = PATRON_PAGO.test(x.desc) && (esTarjeta || (PATRON_PAGO_TARJETA.test(x.desc) && !REGLAS_BASE.some(([re]) => re.test(x.desc.toUpperCase()))));
+    if (pagoDeTarjeta && (esTarjeta ? !gasto : gasto)) { tipo = 'omitir'; motivo = esTarjeta ? 'pago a la tarjeta' : 'pago de tarjeta (ya cuenta en Deudas)'; }
     else if (esTarjeta && !gasto) { tipo = 'omitir'; motivo = 'devolución o crédito'; }
     if (existentes.has(ref)) { tipo = 'omitir'; motivo = 'ya importado'; }
     const c = tipo === 'ingreso' ? { cat: /PAYROLL|DIRECT DEP/i.test(x.desc) ? 'Salario' : 'Otros', ambito: ambitoBase } : categorizar(x.desc, ambitoBase);
@@ -2373,11 +2379,34 @@ function sugerenciaPresupuesto() {
   const porFijos = {};
   S.fijos.filter(f => f.tipo === 'gasto' && ambitoDe(f) === 'personal').forEach(f => { porFijos[f.cat] = (porFijos[f.cat] || 0) + f.monto; });
   const cats = [...new Set([...Object.keys(REFERENCIA_USA), ...Object.keys(porFijos)])].filter(c => CAT_GASTO[c]);
-  return cats.map(c => {
+  const lista = cats.map(c => {
     const ref = ingreso && REFERENCIA_USA[c] ? Math.round(ingreso * REFERENCIA_USA[c] / 100 / 10) * 10 : 0;
     const fijo = Math.ceil((porFijos[c] || 0) / 10) * 10;
-    return { cat: c, valor: (S.presupuesto || {})[c] || Math.max(ref, fijo), ref, fijo };
+    const propio = (S.presupuesto || {})[c];
+    return { cat: c, valor: propio || Math.max(ref, fijo), ref, fijo, propio: !!propio };
   });
+  return ajustarAlIngreso(lista, ingreso);
+}
+
+/* La sugerencia nunca pasa de lo que entra: primero los pagos mínimos de deudas y un 5% de ahorro;
+   lo flexible (lo que pasa de los gastos fijos) se reduce en proporción. */
+const RECORTABLES = ['Restaurantes', 'Diversión', 'Ropa', 'Suscripciones', 'Cuidado personal', 'Mascotas', 'Transporte', 'Educación'];
+function ajustarAlIngreso(lista, ingreso) {
+  if (!ingreso) return lista;
+  const minimos = suma(S.deudas.filter(d => d.saldo > 0 && ambitoDe(d) === 'personal'), d => d.minimo || 0);
+  const disponible = ingreso - minimos - Math.round(ingreso * 0.05 / 10) * 10;
+  let exceso = suma(lista, x => x.valor) - disponible;
+  if (exceso <= 0) return lista;
+  const flex = x => x.propio ? 0 : Math.max(0, x.valor - x.fijo);
+  const factor = {};
+  /* 1º se recorta lo que se puede posponer (hasta dejar una cuarta parte); 2º lo demás, en proporción */
+  const f1 = suma(lista.filter(x => RECORTABLES.includes(x.cat)), flex);
+  const corte1 = Math.min(exceso, f1 * 0.75);
+  if (f1) lista.forEach(x => { if (RECORTABLES.includes(x.cat)) factor[x.cat] = 1 - corte1 / f1; });
+  exceso -= corte1;
+  const f2 = suma(lista.filter(x => !RECORTABLES.includes(x.cat)), flex);
+  if (exceso > 0 && f2) lista.forEach(x => { if (!RECORTABLES.includes(x.cat)) factor[x.cat] = Math.max(0, 1 - exceso / f2); });
+  return lista.map(x => x.propio || factor[x.cat] === undefined ? x : { ...x, valor: x.fijo + Math.floor(flex(x) * factor[x.cat] / 10) * 10 });
 }
 
 function abrirGuia(n) {
@@ -2439,14 +2468,14 @@ function guardarPasoGuia(clave) {
   const filas = clave === 'presupuesto' ? [] : leerFilasGuia();
   const dia = v => Math.max(0, Math.min(31, Math.round(num(v)) || 0));
   if (clave === 'ingresos') filas.filter(f => num(f.monto) > 0).forEach(f => S.fijos.push({
-    id: uid(), tipo: 'ingreso', nombre: f.nombre || f.cat, monto: r2(num(f.monto)), cat: f.cat || 'Salario', dia: dia(f.dia), cuenta: '', ambito: f.ambito || 'personal'
+    id: uid(), tipo: 'ingreso', nombre: f.nombre || f.cat, monto: r2(num(f.monto)), cat: f.cat || 'Salario', dia: dia(f.dia) || 15, cuenta: '', ambito: f.ambito || 'personal'
   }));
   if (clave === 'fijos') filas.filter(f => num(f.monto) > 0).forEach(f => S.fijos.push({
-    id: uid(), tipo: 'gasto', nombre: f.nombre || nombreCat(f.cat), monto: r2(num(f.monto)), cat: f.cat || 'Otros', dia: dia(f.dia), cuenta: '', ambito: 'personal'
+    id: uid(), tipo: 'gasto', nombre: f.nombre || nombreCat(f.cat), monto: r2(num(f.monto)), cat: f.cat || 'Otros', dia: dia(f.dia) || 1, cuenta: '', ambito: 'personal'
   }));
   if (clave === 'deudas') {
     filas.filter(f => num(f.saldo) > 0).forEach(f => S.deudas.push({
-      id: uid(), nombre: f.nombre || 'Deuda', tipo: 'Tarjeta', ultimos4: '', saldo: r2(num(f.saldo)), saldoInicial: r2(num(f.saldo)),
+      id: uid(), nombre: f.nombre || 'Deuda', tipo: tipoDeuda(f.nombre, num(f.limite)), ultimos4: '', saldo: r2(num(f.saldo)), saldoInicial: r2(num(f.saldo)),
       apr: r2(num(f.apr)), minimo: r2(num(f.minimo)), limite: r2(num(f.limite)), dia: dia(f.dia), ambito: f.ambito || 'personal', deNegocio: 0
     }));
     const sin = $('#sinDeudasGuia');
@@ -3397,6 +3426,36 @@ ACC.regIngreso = () => formMov('ingreso');
 ACC.regPago = () => elegirDeudaParaPago();
 ACC.regAporte = () => elegirMetaParaAporte();
 
+/* La bienvenida no pregunta el tipo: se deduce del nombre (un préstamo no tiene límite de crédito) */
+const PATRON_PRESTAMO = /pr[eé]stamo|loan|carro|auto\b|hipoteca|mortgage|casa|estudiant|student|personal loan|financiamiento/i;
+function tipoDeuda(nombre, limite) {
+  const n = String(nombre || '');
+  if (/carro|auto\b/i.test(n)) return 'Carro';
+  if (/hipoteca|mortgage/i.test(n)) return 'Casa';
+  if (PATRON_PRESTAMO.test(n) && !limite) return 'Préstamo';
+  return 'Tarjeta';
+}
+
+/* Tarjetas que se pueden elegir al pagar con crédito */
+function tarjetasParaGasto(m) {
+  return S.deudas.filter(d => (d.tipo === 'Tarjeta' && !(PATRON_PRESTAMO.test(d.nombre) && !d.limite)) || (m && m.tarjeta === d.id))
+    .map(d => [d.id, '💳 ' + d.nombre + (d.ultimos4 ? ' ••' + d.ultimos4 : '')]);
+}
+
+/* Lo que hace un movimiento con tu dinero: con tarjeta de crédito sube la deuda de esa tarjeta;
+   con débito o efectivo mueve el saldo de la cuenta. sentido = 1 al guardar, -1 al deshacer. */
+function aplicarMov(x, sentido) {
+  if (x.tipo === 'gasto' && x.pago === 'credito') {
+    const d = x.tarjeta && S.deudas.find(y => y.id === x.tarjeta);
+    if (d) {
+      d.saldo = Math.max(0, Math.round((d.saldo + sentido * x.monto) * 100) / 100);
+      if (d.saldo > (d.saldoInicial || 0)) d.saldoInicial = d.saldo;
+    }
+    return;
+  }
+  moverCuenta(x.cuenta, sentido * signo(x) * x.monto);
+}
+
 function formMov(tipo, m) {
   const gasto = tipo === 'gasto';
   const id = m ? m.id : uid();
@@ -3415,14 +3474,15 @@ function formMov(tipo, m) {
     ...(conNegocio() && gasto ? [{ n: 'origen', t: 'select', l: 'Si es del negocio: ¿con qué se pagó?', ops: [['negocio', '🏢 Dinero o tarjeta del negocio'], ['casa', '🏠 Dinero o tarjeta personal (el negocio te lo debe)']] }] : []),
     ...((S.eventos || []).some(e => !e.cerrado || (m && m.evento === e.id)) ? [{ n: 'evento', t: 'select', l: '¿Es de un evento?', ops: [['', 'No'], ...S.eventos.filter(e => !e.cerrado || (m && m.evento === e.id)).map(e => [e.id, '🎪 ' + e.nombre])] }] : [])
   ];
-  if (gasto) campos.splice(2, 0, { n: 'pago', t: 'select', l: '¿Cómo pagaste?', ops: Object.entries(FORMAS_PAGO) });
+  if (gasto) campos.splice(2, 0, { n: 'pago', t: 'select', l: '¿Cómo pagaste?', ops: Object.entries(FORMAS_PAGO) },
+    { n: 'tarjeta', t: 'select', l: '¿Con qué tarjeta?', ops: [...tarjetasParaGasto(m), ['', 'Otra / no está en la app']] });
   if (gasto) campos.push({ n: 'fuga', t: 'check', l: 'Es una fuga: pude no haberlo gastado' });
   if (!m) campos.push({ n: 'repite', t: 'check', l: 'Se repite cada mes (guardarlo como fijo)' });
 
   formulario({
     titulo: (m ? 'Editar ' : 'Nuevo ') + tipo,
     campos,
-    valores: m || { fecha: hoy(), cuenta: cuentaPorDefecto(), ambito: ambitoPorDefecto(), pago: S.perfil.ultimoPago || 'credito', origen: 'negocio' },
+    valores: m || { fecha: hoy(), cuenta: cuentaPorDefecto(), ambito: ambitoPorDefecto(), pago: S.perfil.ultimoPago || 'debito', tarjeta: S.perfil.ultimaTarjeta || '', origen: 'negocio' },
     extra: gasto ? `
       <div class="campo"><span>Foto de la factura (opcional)</span>
         <div id="fotoZona"></div>
@@ -3430,6 +3490,15 @@ function formMov(tipo, m) {
       </div>` : '',
     alAbrir: form => {
       if (!gasto) return;
+      const caja = n => form.elements[n] && form.elements[n].closest('.campo, label');
+      const ajustar = () => {
+        const credito = form.elements.pago.value === 'credito';
+        if (caja('tarjeta')) caja('tarjeta').hidden = !credito;
+        if (caja('cuenta')) caja('cuenta').hidden = credito;
+        if (caja('origen')) caja('origen').hidden = !form.elements.ambito || form.elements.ambito.value !== 'negocio';
+      };
+      ['pago', 'ambito'].forEach(n => form.elements[n] && form.elements[n].addEventListener('change', ajustar));
+      ajustar();
       const zona = $('#fotoZona');
 
       const pintarFoto = () => {
@@ -3486,13 +3555,15 @@ function formMov(tipo, m) {
       }
     },
     borrar: m ? () => {
-      moverCuenta(m.cuenta, -signo(m) * m.monto);
+      aplicarMov(m, -1);
       S.mov = S.mov.filter(x => x.id !== m.id);
       if (m.foto) fotoBorrar(m.id);
     } : null,
     guardar: v => {
       v.fecha = v.fecha || hoy();
       v.cuenta = v.cuenta || '';
+      if (gasto && v.pago === 'credito') v.cuenta = ''; else delete v.tarjeta;
+      if (gasto && v.ambito !== 'negocio') delete v.origen;
       const repite = v.repite;
       delete v.repite;
 
@@ -3505,9 +3576,11 @@ function formMov(tipo, m) {
       }
 
       if (m) {
-        moverCuenta(m.cuenta, -signo(m) * m.monto);
+        aplicarMov(m, -1);
+        if (!('tarjeta' in v)) delete m.tarjeta;
+        if (!('origen' in v)) delete m.origen;
         Object.assign(m, v);
-        moverCuenta(m.cuenta, signo(m) * m.monto);
+        aplicarMov(m, 1);
       } else {
         const nuevo = { id, tipo, ...v };
         if (repite) {
@@ -3519,12 +3592,13 @@ function formMov(tipo, m) {
           nuevo.fijoId = fijo.id;
         }
         S.mov.push(nuevo);
-        moverCuenta(nuevo.cuenta, signo(nuevo) * nuevo.monto);
-        aviso(gasto ? 'Gasto registrado' : 'Ingreso registrado');
+        aplicarMov(nuevo, 1);
+        aviso(gasto ? (nuevo.tarjeta ? 'Gasto registrado · se sumó a tu tarjeta' : 'Gasto registrado') : 'Ingreso registrado');
         if (v.fecha.slice(0, 7) <= mesActual()) mesVer = v.fecha.slice(0, 7);
       }
       if (v.cuenta) S.perfil.ultimaCuenta = v.cuenta;
       if (v.pago) S.perfil.ultimoPago = v.pago;
+      if (v.tarjeta) S.perfil.ultimaTarjeta = v.tarjeta;
     }
   });
 }
