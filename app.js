@@ -8,7 +8,7 @@
  ************************************************************/
 
 /* Al publicar un cambio: subir este número y el de version.json (deben ser iguales) */
-const VERSION = '0.17.0';
+const VERSION = '0.17.1';
 const BETA = true; /* quitar en el lanzamiento oficial */
 
 const CLAVE = 'cff.v1';
@@ -3762,29 +3762,31 @@ function abrirAjustes() {
     bienvenida();
   });
 
-  $('#archivo').addEventListener('change', e => {
-    const archivo = e.target.files[0];
-    if (!archivo) return;
-    const lector = new FileReader();
-    lector.onload = async () => {
-      try {
-        const d = JSON.parse(lector.result);
-        if (!d || !d.perfil || !Array.isArray(d.mov)) throw new Error('formato');
-        const fotos = d.fotos || {};
-        delete d.fotos;
-        localStorage.setItem(CLAVE, JSON.stringify(d));
-        S = leer();
-        await fotosBorrarTodas();
-        for (const [id, datos] of Object.entries(fotos)) {
-          if (typeof datos === 'string' && datos.startsWith('data:image/')) await fotoGuardar(id, datos).catch(() => {});
-        }
-        cerrarHoja(); pintar(); aviso('Copia recuperada');
-      } catch (err) {
-        aviso('Ese archivo no es una copia de esta app');
+  $('#archivo').addEventListener('change', e => recuperarDeArchivo(e.target.files[0]));
+}
+
+/* Carga un archivo de respaldo (.json) y reemplaza los datos de este teléfono */
+function recuperarDeArchivo(archivo) {
+  if (!archivo) return;
+  const lector = new FileReader();
+  lector.onload = async () => {
+    try {
+      const d = JSON.parse(lector.result);
+      if (!d || !d.perfil || !Array.isArray(d.mov)) throw new Error('formato');
+      const fotos = d.fotos || {};
+      delete d.fotos;
+      localStorage.setItem(CLAVE, JSON.stringify(d));
+      S = leer();
+      await fotosBorrarTodas();
+      for (const [id, datos] of Object.entries(fotos)) {
+        if (typeof datos === 'string' && datos.startsWith('data:image/')) await fotoGuardar(id, datos).catch(() => {});
       }
-    };
-    lector.readAsText(archivo);
-  });
+      cerrarHoja(); pintar(); aviso('Copia recuperada');
+    } catch (err) {
+      aviso('Ese archivo no es una copia de esta app');
+    }
+  };
+  lector.readAsText(archivo);
 }
 
 ACC.restaurar = () => $('#archivo').click();
@@ -4295,8 +4297,15 @@ function bienvenida() {
       { n: 'correo', t: 'texto', l: 'Tu correo (opcional, para recordatorios)', ph: 'tu@correo.com' },
       { n: 'negocio', t: 'texto', l: '¿Tienes negocio propio? Escribe su nombre (opcional)', ph: 'Ej. Mi Empresa LLC' }
     ],
-    texto: 'Empezar: armar mi mapa (10 min)',
-    sinCerrar: true,
+texto: 'Empezar: armar mi mapa (10 min)',
+sinCerrar: true,
+extra: `<div class="campo"><button type="button" class="btn ancho" id="btnYaUsaba">💾 ¿Ya usabas la app? Recuperar mi copia</button>
+  <input type="file" id="archivoBienvenida" accept=".json,application/json" hidden>
+  <p class="ayuda">Si la usabas antes con otro enlace o en otro teléfono, carga aquí el archivo de copia (.json) que guardaste.</p></div>`,
+alAbrir: () => {
+  $('#btnYaUsaba').addEventListener('click', () => $('#archivoBienvenida').click());
+  $('#archivoBienvenida').addEventListener('change', e => recuperarDeArchivo(e.target.files[0]));
+},
     guardar: v => {
       S.perfil.nombre = v.nombre;
       S.perfil.correo = correoValido(v.correo) ? v.correo.trim().toLowerCase() : '';
