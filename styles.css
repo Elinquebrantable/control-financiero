@@ -539,3 +539,30 @@ a.btn.principal{color:var(--sobre-cyan)}
 .presu-guia label span small{display:block;color:var(--muted);font-size:11px}
 .presu-guia input{width:110px;flex:none;text-align:right}
 .enlace{all:unset;cursor:pointer;color:inherit}
+
+/* BLOQUEO CON PIN / FACE ID */
+
+#candado{
+  position:fixed;inset:0;z-index:200;background:var(--fondo);background-color:var(--html-bg);
+  display:flex;align-items:center;justify-content:center;padding:24px;
+}
+#candado[hidden]{display:none}
+.caja-candado{width:100%;max-width:340px;text-align:center}
+.caja-candado h1{font-size:32px;margin:6px 0 4px}
+.puntos-pin{display:flex;justify-content:center;gap:16px;margin:22px 0 26px}
+.puntos-pin i{width:14px;height:14px;border-radius:50%;border:2px solid var(--muted);transition:background .15s}
+.puntos-pin i.lleno{background:var(--cyan);border-color:var(--cyan)}
+.puntos-pin.error{animation:temblor .4s}
+.puntos-pin.error i{border-color:var(--red)}
+@keyframes temblor{0%,100%{transform:none}20%,60%{transform:translateX(-8px)}40%,80%{transform:translateX(8px)}}
+.teclado{display:grid;grid-template-columns:repeat(3,76px);gap:16px 26px;justify-content:center}
+.tecla{
+  width:76px;height:76px;border-radius:50%;border:1px solid var(--border);
+  background:var(--sutil);color:var(--text);font-size:28px;font-weight:500;
+  display:grid;place-items:center;line-height:1;
+}
+.tecla:active{background:var(--cyan-soft)}
+.tecla.borrar,.tecla.bio{background:none;border-color:transparent;font-size:24px}
+.tecla.bio small{display:block;font-size:10px;color:var(--muted);margin-top:2px}
+body.bloqueada{overflow:hidden}
+body.tapada #vista,body.tapada .tabs,body.tapada .fab,body.tapada .top,body.tapada #hoja{filter:blur(22px)}

@@ -8,7 +8,7 @@
  ************************************************************/
 
 /* Al publicar un cambio: subir este número y el de version.json (deben ser iguales) */
-const VERSION = '0.14.0';
+const VERSION = '0.16.0';
 
 const CLAVE = 'cff.v1';
 const DIAS_PROGRAMA = 90;
@@ -875,7 +875,7 @@ function vistaInicio() {
   }
   h += `</div>`;
 
-  h += `<p class="legal">Herramienta educativa. No es asesoría financiera, legal ni fiscal.<br>Tus datos se guardan solo en este teléfono.</p>`;
+  h += `<p class="legal">Herramienta educativa. No es asesoría financiera, legal ni fiscal.<br>Tus datos financieros se guardan solo en este teléfono.</p>`;
   return h;
 }
 
@@ -2477,6 +2477,7 @@ ACC.guiaPaso = id => abrirGuia(Number(id) || 1);
 
 function resumenGuia() {
   S.perfil.guiaHecha = hoy(); S.perfil.guiaPaso = 0; guardar();
+  unaVez('guia-completada');
   const s = saludFinanciera();
   const malos = s.factores.filter(f => !f.ok).slice(0, 3);
   const plan = S.deudas.some(d => d.saldo > 0) ? simular(S.perfil.metodo || 'avalancha', 0, S.deudas.filter(d => ambitoDe(d) === 'personal')) : null;
@@ -2516,6 +2517,277 @@ function tarjetaConfigurar() {
   </div>`;
 }
 ACC.guiaOcultar = () => { S.perfil.guiaOculta = true; guardar(); pintar(); aviso('Puedes volver a la guía desde ☰ → Bienvenida guiada'); };
+
+/************************************************************
+ * BLOQUEO: PIN + FACE ID / HUELLA
+ * - El PIN se guarda cifrado (SHA-256 con sal), nunca en texto.
+ * - Face ID usa el autenticador del propio teléfono (WebAuthn).
+ * - La configuración vive aparte de tus datos: un respaldo nunca
+ *   te deja fuera en otro teléfono.
+ * Protege el acceso a la app; no cifra los datos guardados.
+ ************************************************************/
+
+const CLAVE_LOCK = 'cff.lock';
+const leerLock = () => { try { return JSON.parse(localStorage.getItem(CLAVE_LOCK) || 'null') || {}; } catch (e) { return {}; } };
+const guardarLock = l => { try { localStorage.setItem(CLAVE_LOCK, JSON.stringify(l)); } catch (e) { /* sin almacenamiento */ } };
+const bloqueoActivo = () => !!leerLock().pin;
+
+async function cifrarPin(pin, sal) {
+  const datos = new TextEncoder().encode(sal + ':' + pin);
+  const h = await crypto.subtle.digest('SHA-256', datos);
+  return [...new Uint8Array(h)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function bioDisponible() {
+  try {
+    return !!(window.PublicKeyCredential && PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable &&
+      await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable());
+  } catch (e) { return false; }
+}
+const aB64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf)));
+const deB64 = t => Uint8Array.from(atob(t), c => c.charCodeAt(0));
+
+async function registrarBio() {
+  const cred = await navigator.credentials.create({ publicKey: {
+    challenge: crypto.getRandomValues(new Uint8Array(32)),
+    rp: { name: 'Mi Control' },
+    user: { id: crypto.getRandomValues(new Uint8Array(16)), name: 'mi-control', displayName: S.perfil.nombre || 'Mi Control' },
+    pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
+    authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required', residentKey: 'discouraged' },
+    timeout: 60000, attestation: 'none'
+  } });
+  return aB64(cred.rawId);
+}
+
+async function verificarBio(id) {
+  const r = await navigator.credentials.get({ publicKey: {
+    challenge: crypto.getRandomValues(new Uint8Array(32)),
+    allowCredentials: [{ type: 'public-key', id: deB64(id), transports: ['internal'] }],
+    userVerification: 'required', timeout: 60000
+  } });
+  return !!r;
+}
+
+/* Teclado numérico reutilizable (pantalla de bloqueo y ajustes) */
+function htmlTeclado(largo, conBio) {
+  const tecla = (t, extra = '') => `<button type="button" class="tecla ${extra}" data-tecla="${t}">${t === 'borrar' ? '⌫' : t === 'bio' ? '🙂<small>Face ID</small>' : t}</button>`;
+  return `<div class="puntos-pin">${Array.from({ length: largo }, () => '<i></i>').join('')}</div>
+    <div class="teclado">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => tecla(n)).join('')}
+      ${conBio ? tecla('bio', 'bio') : '<span></span>'}${tecla(0)}${tecla('borrar', 'borrar')}</div>`;
+}
+
+function activarTeclado(raiz, largo, alCompletar, alBio) {
+  let pin = '';
+  const pintarPuntos = () => raiz.querySelectorAll('.puntos-pin i').forEach((i, k) => i.classList.toggle('lleno', k < pin.length));
+  raiz.addEventListener('click', async e => {
+    const b = e.target.closest('[data-tecla]');
+    if (!b) return;
+    const t = b.dataset.tecla;
+    if (t === 'bio') { if (alBio) alBio(); return; }
+    if (t === 'borrar') pin = pin.slice(0, -1);
+    else if (pin.length < largo) pin += t;
+    pintarPuntos();
+    if (pin.length === largo) {
+      const ok = await alCompletar(pin);
+      if (!ok) {
+        const p = raiz.querySelector('.puntos-pin');
+        p.classList.add('error'); setTimeout(() => p.classList.remove('error'), 450);
+      }
+      pin = ''; setTimeout(pintarPuntos, 120);
+    }
+  });
+}
+
+/* ---------- Pantalla de bloqueo ---------- */
+
+let candadoAbierto = false;
+
+async function mostrarCandado() {
+  const l = leerLock();
+  if (!l.pin || candadoAbierto) return;
+  candadoAbierto = true;
+  const conBio = !!l.bio && await bioDisponible();
+  let div = $('#candado');
+  if (!div) { div = document.createElement('div'); div.id = 'candado'; document.body.appendChild(div); }
+  div.innerHTML = `<div class="caja-candado">
+    <p class="hola"><b>${esc(saludo())}${primerNombre() ? ', ' + esc(primerNombre()) : ''}</b></p>
+    <h1>🔒 Mi Control</h1>
+    <p class="chico muted" id="msgCandado">Escribe tu PIN${conBio ? ' o usa Face ID' : ''}</p>
+    ${htmlTeclado(l.largo || 4, conBio)}
+    <button type="button" class="enlace chico muted" id="olvidePin" style="margin-top:18px">Olvidé mi PIN</button>
+  </div>`;
+  div.hidden = false;
+  document.body.classList.add('bloqueada');
+  const desbloquear = () => {
+    div.hidden = true; candadoAbierto = false;
+    document.body.classList.remove('bloqueada');
+    guardarLock({ ...leerLock(), fallos: 0 });
+  };
+  const usarBio = async () => {
+    try { if (await verificarBio(l.bio)) desbloquear(); }
+    catch (e) { $('#msgCandado').textContent = 'No se pudo usar Face ID. Escribe tu PIN.'; }
+  };
+  activarTeclado(div, l.largo || 4, async pin => {
+    const lk = leerLock();
+    if (lk.espera && Date.now() < lk.espera) {
+      $('#msgCandado').textContent = 'Demasiados intentos. Espera ' + Math.ceil((lk.espera - Date.now()) / 1000) + ' segundos.';
+      return false;
+    }
+    if (await cifrarPin(pin, lk.sal) === lk.pin) { desbloquear(); return true; }
+    const fallos = (lk.fallos || 0) + 1;
+    guardarLock({ ...lk, fallos, espera: fallos >= 5 ? Date.now() + 30000 * (fallos - 4) : 0 });
+    $('#msgCandado').textContent = fallos >= 5 ? 'PIN incorrecto. Espera ' + (30 * (fallos - 4)) + ' segundos.' : 'PIN incorrecto (' + fallos + ' de 5).';
+    return false;
+  }, usarBio);
+  $('#olvidePin').addEventListener('click', () => {
+    $('#msgCandado').innerHTML = 'Sin internet ni servidor, nadie puede ver ni recuperar tu PIN. Para entrar, borra los datos de este teléfono y recupera tu última copia (☰ → Recuperar copia). <button type="button" class="btn chico peligro" id="borrarPorPin" style="margin-top:10px">Borrar datos de este teléfono</button>';
+    let conf = false;
+    $('#borrarPorPin').addEventListener('click', e => {
+      if (!conf) { conf = true; e.target.textContent = 'Se borra todo. Toca otra vez para confirmar'; return; }
+      localStorage.removeItem(CLAVE); localStorage.removeItem(CLAVE_LOCK);
+      fotosBorrarTodas(); location.reload();
+    });
+  });
+}
+
+/* Bloqueo al volver a la app y pantalla difuminada en el selector de apps */
+let ocultaDesde = 0;
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    ocultaDesde = Date.now();
+    if (bloqueoActivo()) document.body.classList.add('tapada');
+  } else {
+    document.body.classList.remove('tapada');
+    const l = leerLock();
+    if (l.pin && Date.now() - ocultaDesde >= (l.tras ?? 60) * 1000) mostrarCandado();
+  }
+});
+
+/* ---------- Ajustes de seguridad ---------- */
+
+function filasSeguridad() {
+  const l = leerLock();
+  if (!l.pin) return filaAjuste({ a: 'crearPin', ic: 'escudo', titulo: 'Bloquear con PIN y Face ID', sub: 'Nadie entra a tus finanzas sin tu permiso' });
+  return [
+    filaAjuste({ a: 'crearPin', ic: 'escudo', color: 'verde', titulo: 'Cambiar PIN', sub: 'Bloqueo activado · ' + (l.largo || 4) + ' dígitos' }),
+    filaAjuste({ a: 'alternarBio', ic: 'persona', titulo: l.bio ? 'Face ID / huella: activado' : 'Activar Face ID / huella', sub: l.bio ? 'Toca para desactivar' : 'Entra con tu cara o tu huella' }),
+    filaAjuste({ a: 'tiempoBloqueo', ic: 'calendario', titulo: 'Bloquear al salir', sub: ({ 0: 'De inmediato', 60: 'Después de 1 minuto', 300: 'Después de 5 minutos' })[l.tras ?? 60] }),
+    filaAjuste({ a: 'quitarPin', ic: 'borrar', color: 'rojo', titulo: 'Quitar el bloqueo', sub: 'Te pedirá tu PIN' })
+  ].join('');
+}
+
+ACC.crearPin = () => {
+  let largo = 4, primero = '';
+  const pintar = paso => {
+    hoja(`${cabecera(paso === 1 ? 'Crea tu PIN' : 'Confírmalo')}
+      <p class="ayuda">${paso === 1 ? 'Elige un PIN que recuerdes y que no sea tu fecha de nacimiento. No se puede recuperar: si lo olvidas tendrás que restaurar una copia.' : 'Escríbelo otra vez.'}</p>
+      ${paso === 1 ? `<div class="segmento" style="margin-top:10px"><button type="button" data-largo="4" class="${largo === 4 ? 'activo' : ''}">4 dígitos</button><button type="button" data-largo="6" class="${largo === 6 ? 'activo' : ''}">6 dígitos</button></div>` : ''}
+      <div id="tecladoPin" class="centro" style="margin-top:14px">${htmlTeclado(largo, false)}</div>`);
+    document.querySelectorAll('[data-largo]').forEach(b => b.addEventListener('click', () => { largo = Number(b.dataset.largo); pintar(1); }));
+    activarTeclado($('#tecladoPin'), largo, async pin => {
+      if (paso === 1) { primero = pin; setTimeout(() => pintar(2), 150); return true; }
+      if (pin !== primero) { aviso('No coinciden. Empieza de nuevo.'); setTimeout(() => pintar(1), 300); return false; }
+      const sal = aB64(crypto.getRandomValues(new Uint8Array(16)));
+      const l = leerLock();
+      guardarLock({ ...l, pin: await cifrarPin(pin, sal), sal, largo, fallos: 0, tras: l.tras ?? 60 });
+      cerrarHoja();
+      aviso('🔒 Bloqueo activado');
+      unaVez('bloqueo-activado');
+      if (!l.bio && await bioDisponible()) setTimeout(ofrecerBio, 400); else abrirAjustes();
+      return true;
+    });
+  };
+  pintar(1);
+};
+
+function ofrecerBio() {
+  hoja(`${cabecera('¿Usar Face ID o huella?')}
+    <p class="ayuda">Así entras sin escribir el PIN. El PIN sigue funcionando como respaldo.</p>
+    <div class="botones"><button class="btn" data-a="cerrar">Ahora no</button><button class="btn principal" data-a="alternarBio">Activar Face ID</button></div>`);
+}
+
+ACC.alternarBio = async () => {
+  const l = leerLock();
+  if (l.bio) { guardarLock({ ...l, bio: '' }); aviso('Face ID desactivado'); abrirAjustes(); return; }
+  try {
+    const id = await registrarBio();
+    guardarLock({ ...leerLock(), bio: id });
+    aviso('🙂 Face ID activado');
+  } catch (e) {
+    aviso('Este teléfono no permitió activar Face ID. Puedes seguir usando tu PIN.');
+  }
+  abrirAjustes();
+};
+
+ACC.tiempoBloqueo = () => formulario({
+  titulo: 'Bloquear al salir',
+  campos: [{ n: 'tras', t: 'select', l: 'Pedir PIN cuando vuelvas después de…', ops: [['0', 'De inmediato'], ['60', '1 minuto'], ['300', '5 minutos']] }],
+  valores: { tras: String(leerLock().tras ?? 60) },
+  guardar: v => { guardarLock({ ...leerLock(), tras: Number(v.tras) }); }
+});
+
+ACC.quitarPin = () => {
+  const l = leerLock();
+  hoja(`${cabecera('Quitar el bloqueo')}<p class="ayuda">Escribe tu PIN actual.</p><div id="tecladoPin" class="centro">${htmlTeclado(l.largo || 4, false)}</div>`);
+  activarTeclado($('#tecladoPin'), l.largo || 4, async pin => {
+    if (await cifrarPin(pin, l.sal) !== l.pin) return false;
+    localStorage.removeItem(CLAVE_LOCK);
+    cerrarHoja(); aviso('Bloqueo quitado'); abrirAjustes();
+    return true;
+  });
+};
+
+/************************************************************
+ * ESTADÍSTICAS ANÓNIMAS (GoatCounter)
+ * Solo cuenta visitas y eventos de uso. Nunca envía nombres,
+ * correos, montos, tarjetas ni ningún dato financiero.
+ * Sin cookies. Se puede desactivar en ☰ → Seguridad.
+ ************************************************************/
+
+/* Código de la cuenta de GoatCounter (ej. 'controlfinanciero'). Vacío = desactivado. */
+const GOATCOUNTER = '';
+
+const estadisticasActivas = () => !!GOATCOUNTER && S.perfil.estadisticas !== false && location.protocol === 'https:';
+
+function cargarEstadisticas() {
+  if (!estadisticasActivas() || window.goatcounter && window.goatcounter.count) return;
+  window.goatcounter = { no_onload: true, allow_local: false };
+  const s = document.createElement('script');
+  s.async = true;
+  s.src = 'https://gc.zgo.at/count.js';
+  s.dataset.goatcounter = 'https://' + GOATCOUNTER + '.goatcounter.com/count';
+  s.onload = () => {
+    /* Una "visita" por apertura; la ruta no lleva datos: solo la pantalla y si está instalada */
+    contar('/' + (enPantallaDeInicio() ? 'app' : 'web'));
+    if (enPantallaDeInicio()) unaVez('instalada');
+  };
+  document.head.appendChild(s);
+}
+
+function contar(ruta, evento) {
+  try {
+    if (!estadisticasActivas() || !window.goatcounter || !window.goatcounter.count) return;
+    window.goatcounter.count({ path: ruta, title: ruta, event: !!evento });
+  } catch (e) { /* las estadísticas nunca afectan la app */ }
+}
+
+/* Eventos que se cuentan una sola vez por teléfono */
+function unaVez(nombre) {
+  try {
+    const k = 'cff.evento.' + nombre;
+    if (localStorage.getItem(k)) return;
+    localStorage.setItem(k, hoy());
+    contar('evento/' + nombre, true);
+  } catch (e) { /* sin almacenamiento */ }
+}
+
+ACC.alternarEstadisticas = () => {
+  S.perfil.estadisticas = S.perfil.estadisticas === false;
+  guardar();
+  aviso(S.perfil.estadisticas ? 'Estadísticas anónimas activadas. ¡Gracias!' : 'Estadísticas desactivadas');
+  if (S.perfil.estadisticas) cargarEstadisticas();
+  abrirAjustes();
+};
 
 /************************************************************
  * PERSONAL | NEGOCIO | TODO
@@ -3409,6 +3681,9 @@ function abrirAjustes() {
         <p class="ayuda">Si escribes el nombre de tu negocio, puedes separar todo en Personal y Negocio y ver los dos panoramas.</p></div>
     </form>
 
+    <p class="grupo-titulo">Seguridad</p>
+    <div class="grupo">${filasSeguridad()}${GOATCOUNTER ? filaAjuste({ a: 'alternarEstadisticas', ic: 'pyg', titulo: S.perfil.estadisticas === false ? 'Estadísticas anónimas: desactivadas' : 'Estadísticas anónimas: activadas', sub: 'Solo cuenta cuántas personas usan la app. Nunca tus datos.' }) : ''}</div>
+
     <p class="grupo-titulo">Apariencia</p>
     <div class="segmento tres">
       ${[['oscuro', '🌙 Oscuro'], ['claro', '☀️ Claro'], ['auto', '📱 Auto']].map(([k, t]) => `<button type="button" data-a="tema" data-id="${k}" class="${(S.perfil.tema || 'oscuro') === k ? 'activo' : ''}">${t}</button>`).join('')}
@@ -3440,7 +3715,7 @@ function abrirAjustes() {
     <p class="grupo-titulo">App</p>
     <div class="grupo">
       ${filaAjuste({ a: versionNueva ? 'actualizar' : 'buscarVersion', ic: 'actualizar', color: versionNueva ? 'amarillo' : '', titulo: versionNueva ? 'Actualizar a ' + esc(versionNueva) : 'Buscar actualización', sub: 'Tienes la versión ' + VERSION })}
-      ${filaAjuste({ ic: 'escudo', titulo: 'Privacidad', sub: 'Tus datos se guardan solo en este teléfono', attrs: 'type="button" onclick="document.getElementById(\'avisoLegal\').hidden=false"' })}
+      ${filaAjuste({ ic: 'escudo', titulo: 'Privacidad', sub: 'Tus datos financieros se quedan en este teléfono', attrs: 'type="button" onclick="document.getElementById(\'avisoLegal\').hidden=false"' })}
       ${filaAjuste({ ic: 'borrar', color: 'rojo', titulo: 'Borrar todos mis datos', sub: 'No se puede deshacer', attrs: 'id="btnBorrarTodo" type="button"' }).replace('class="ajuste"', 'class="ajuste peligro"')}
     </div>
 
@@ -3448,10 +3723,11 @@ function abrirAjustes() {
       <b>Aviso.</b> Control Financiero Familiar es una herramienta educativa de La Tribu Los Inquebrantables para organizar tus propios números.
       No es asesoría financiera, legal, fiscal ni de inversión, y no garantiza resultados. Las estimaciones dependen de los datos que tú registras.
       Para decisiones importantes consulta a un profesional autorizado.<br><br>
-      <b>Privacidad.</b> Lo que escribes y las fotos de tus facturas se guardan únicamente en este dispositivo. No se envían a ningún servidor y nadie más puede verlos.
+      <b>Privacidad.</b> Lo que escribes y las fotos de tus facturas se guardan únicamente en este dispositivo. Tus datos financieros no se envían a ningún servidor y nadie más puede verlos.
       La app no se conecta con tu banco. De tus tarjetas y cuentas solo guarda los últimos 4 números: nunca escribas números completos, contraseñas ni claves.
       Los estados de cuenta y P&L que subes se leen en el teléfono y no se guardan; solo quedan los números que confirmas.
-      La copia de respaldo contiene todos tus datos; guárdala en un lugar que solo tú controles.
+      La copia de respaldo contiene todos tus datos; guárdala en un lugar que solo tú controles.<br><br>
+      <b>Estadísticas anónimas.</b> Para saber cuántas personas usan la app, se cuenta cada apertura y algunos pasos (instalarla, terminar la bienvenida, activar el bloqueo) con GoatCounter, sin cookies. No se envían nombres, correos, montos ni ningún dato financiero. Puedes desactivarlo en ☰ → Seguridad.
     </p>`);
 
   $('#formAjustes').addEventListener('submit', e => {
@@ -3475,6 +3751,7 @@ function abrirAjustes() {
       return;
     }
     localStorage.removeItem(CLAVE);
+    localStorage.removeItem(CLAVE_LOCK);
     fotosBorrarTodas();
     S = nuevoEstado();
     mesVer = mesActual();
@@ -4034,9 +4311,11 @@ function bienvenida() {
  ************************************************************/
 
 aplicarTema();
+if (bloqueoActivo()) mostrarCandado();
 if (window.matchMedia) window.matchMedia('(prefers-color-scheme: light)').addEventListener?.('change', aplicarTema);
 try { registrarFoto(); guardar(); } catch (e) { /* sin almacenamiento */ }
 pintar();
+cargarEstadisticas();
 if (!S.perfil.inicio) bienvenida();
 else if (S.perfil.saludoDia !== hoy()) {
   /* bienvenida del día, como en la app del banco */
