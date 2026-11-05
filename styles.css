@@ -566,3 +566,16 @@ a.btn.principal{color:var(--sobre-cyan)}
 .tecla.bio small{display:block;font-size:10px;color:var(--muted);margin-top:2px}
 body.bloqueada{overflow:hidden}
 body.tapada #vista,body.tapada .tabs,body.tapada .fab,body.tapada .top,body.tapada #hoja{filter:blur(22px)}
+
+/* Beta */
+.titulo-fila{display:flex;align-items:center;gap:10px}
+.beta{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;border-radius:999px;background:var(--yellow-soft);color:var(--yellow);border:1px solid var(--yellow)}
+.lista-beta{list-style:none;margin:0 0 16px;padding:0}
+.lista-beta li{padding:10px 0;border-bottom:1px solid var(--border)}
+
+/* Mensaje del día */
+.mensaje-dia{background:linear-gradient(135deg,var(--card-a),var(--card-b));border-left:4px solid var(--yellow)}
+.md-titulo{margin:0 0 8px;font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--yellow)}
+.mensaje-dia blockquote{margin:0 0 10px;font-size:16px;line-height:1.45;font-style:italic}
+.mensaje-dia cite{display:block;margin-top:6px;font-style:normal;font-size:13px;font-weight:600;color:var(--muted)}
+.md-consejo{margin:0;font-size:14px;line-height:1.45;color:var(--text)}

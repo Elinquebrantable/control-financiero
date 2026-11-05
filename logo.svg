@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1B4566"/><stop offset="1" stop-color="#0B1A29"/></linearGradient>
+<radialGradient id="r" cx="0.7" cy="0.25" r="0.6"><stop offset="0" stop-color="#FFC83D" stop-opacity="0.18"/><stop offset="1" stop-color="#FFC83D" stop-opacity="0"/></radialGradient></defs>
+<rect width="512" height="512" fill="url(#g)"/><rect width="512" height="512" fill="url(#r)"/>
+<g transform="translate(256 256) scale(2.94) translate(-339.5 -110)">
+<path d="M302 108 V158 H378 V104" fill="none" stroke="#FFFFFF" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M288 114 L330 78 L350 96 L390 60" fill="none" stroke="#FFC83D" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M372 60 H391 V79" fill="none" stroke="#FFC83D" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="340" cy="136" r="14" fill="#2EE59D"/>
+<path d="M344.5 130.5 C343 128.8 341.6 128.3 339.6 128.3 C336.6 128.3 334.9 129.9 334.9 132 C334.9 137 345.2 134.6 345.2 140.1 C345.2 142.4 343.2 143.9 340.2 143.9 C337.9 143.9 336 143 334.6 141.3 M340 125.5 V146.5" fill="none" stroke="#0D1D2D" stroke-width="2.6" stroke-linecap="round"/>
+</g></svg>

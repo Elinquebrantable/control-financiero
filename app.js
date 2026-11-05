@@ -8,7 +8,8 @@
  ************************************************************/
 
 /* Al publicar un cambio: subir este número y el de version.json (deben ser iguales) */
-const VERSION = '0.16.1';
+const VERSION = '0.17.0';
+const BETA = true; /* quitar en el lanzamiento oficial */
 
 const CLAVE = 'cff.v1';
 const DIAS_PROGRAMA = 90;
@@ -783,7 +784,7 @@ function vistaInicio() {
     mensaje = 'Vas en positivo, pero ' + altas[0].nombre + ' está usada al ' + Math.round(utilizacion(altas[0])) + '%.';
   }
 
-  let h = tarjetaActualizar() + tarjetaInstalar() + tarjetaRespaldo() + selectorVista();
+  let h = tarjetaActualizar() + tarjetaInstalar() + tarjetaRespaldo() + selectorVista() + tarjetaMensajeDia();
 
   h += tarjetaConfigurar();
 
@@ -875,7 +876,7 @@ function vistaInicio() {
   }
   h += `</div>`;
 
-  h += `<p class="legal">Herramienta educativa. No es asesoría financiera, legal ni fiscal.<br>Tus datos financieros se guardan solo en este teléfono.</p>`;
+  h += `<p class="legal">${BETA ? '<b>Versión beta gratis.</b> Puede tener errores: guarda tu copia seguido.<br>' : ''}Herramienta educativa. No es asesoría financiera, legal ni fiscal.<br>Tus datos financieros se guardan solo en este teléfono.</p>`;
   return h;
 }
 
@@ -3705,6 +3706,7 @@ function abrirAjustes() {
     <div class="grupo">
       ${filaAjuste({ a: 'importar', ic: 'importar', titulo: 'Importar movimientos (CSV)', sub: 'Amex, Chase, BofA, Wells Fargo, Capital One, Discover' })}
       ${filaAjuste({ a: 'reglas', ic: 'reglas', titulo: 'Reglas de categorías', sub: (S.reglas || []).length ? S.reglas.length + ' aprendidas' : 'Se aprenden al importar' })}
+      ${filaAjuste({ a: 'mensajeDia', ic: 'calendario', titulo: 'Mensaje del día', sub: ({ ambos: 'Versículo y consejo', consejo: 'Solo consejo', no: 'Apagado' })[modoMensaje()] + (notifActiva() ? ' · 🔔 activadas' : ' · recíbelo cada mañana') })}
       ${filaAjuste({ a: 'calendario', ic: 'calendario', titulo: 'Pagos en mi Calendario', sub: 'Recordatorios en el iPhone, 3 días antes' })}
       ${filaAjuste({ a: 'respaldar', ic: 'bajar', color: 'verde', titulo: 'Guardar copia', sub: ultimo ? 'Última copia: ' + esc(fechaCorta(ultimo)) : 'Todavía no has guardado ninguna' })}
       ${filaAjuste({ a: 'restaurar', ic: 'subir', titulo: 'Recuperar copia', sub: 'Carga un archivo de respaldo (.json)' })}
@@ -3714,7 +3716,7 @@ function abrirAjustes() {
 
     <p class="grupo-titulo">App</p>
     <div class="grupo">
-      ${filaAjuste({ a: versionNueva ? 'actualizar' : 'buscarVersion', ic: 'actualizar', color: versionNueva ? 'amarillo' : '', titulo: versionNueva ? 'Actualizar a ' + esc(versionNueva) : 'Buscar actualización', sub: 'Tienes la versión ' + VERSION })}
+      ${filaAjuste({ a: versionNueva ? 'actualizar' : 'buscarVersion', ic: 'actualizar', color: versionNueva ? 'amarillo' : '', titulo: versionNueva ? 'Actualizar a ' + esc(versionNueva) : 'Buscar actualización', sub: 'Tienes la versión ' + VERSION + (BETA ? ' · Beta gratis' : '') })}
       ${filaAjuste({ ic: 'escudo', titulo: 'Privacidad', sub: 'Tus datos financieros se quedan en este teléfono', attrs: 'type="button" onclick="document.getElementById(\'avisoLegal\').hidden=false"' })}
       ${filaAjuste({ ic: 'borrar', color: 'rojo', titulo: 'Borrar todos mis datos', sub: 'No se puede deshacer', attrs: 'id="btnBorrarTodo" type="button"' }).replace('class="ajuste"', 'class="ajuste peligro"')}
     </div>
@@ -4307,6 +4309,168 @@ function bienvenida() {
 
 
 /************************************************************
+ * MENSAJE DEL DÍA: un versículo y un consejo de dinero cada día
+ * Versículos: Reina-Valera 1909 (dominio público), ortografía adaptada.
+ ************************************************************/
+
+const VERSICULOS = [
+  ['Proverbios 21:5', 'Los pensamientos del diligente ciertamente tienden a abundancia; mas todo presuroso, indefectiblemente a pobreza.'],
+  ['Proverbios 22:7', 'El rico se enseñoreará de los pobres; y el que toma prestado, siervo es del que empresta.'],
+  ['Proverbios 21:20', 'Tesoro codiciable y pingüe hay en la casa del sabio; mas el hombre insensato lo disipará.'],
+  ['Lucas 14:28', '¿Cuál de vosotros, queriendo edificar una torre, no cuenta primero sentado los gastos, si tiene lo que necesita para acabarla?'],
+  ['Proverbios 6:6-8', 'Ve a la hormiga, oh perezoso, mira sus caminos, y sé sabio; la cual prepara en el verano su comida, y allega en el tiempo de la siega su mantenimiento.'],
+  ['Romanos 13:8', 'No debáis a nadie nada, sino amaros unos a otros.'],
+  ['Hebreos 13:5', 'Sean las costumbres vuestras sin avaricia; contentos de lo presente.'],
+  ['Proverbios 27:23', 'Considera atentamente el aspecto de tus ovejas; pon tu corazón a tus rebaños.'],
+  ['Eclesiastés 5:10', 'El que ama el dinero, no se hartará de dinero; y el que ama el mucho tener, no sacará fruto.'],
+  ['Lucas 16:10', 'El que es fiel en lo muy poco, también en lo más es fiel.'],
+  ['Proverbios 3:9', 'Honra a Jehová de tu sustancia, y de las primicias de todos tus frutos.'],
+  ['Mateo 6:21', 'Porque donde estuviere vuestro tesoro, allí estará vuestro corazón.'],
+  ['Proverbios 10:4', 'La mano negligente hace pobre; mas la mano de los diligentes enriquece.'],
+  ['Proverbios 22:3', 'El avisado ve el mal, y escóndese; mas los simples pasan, y reciben el daño.'],
+  ['Proverbios 16:3', 'Encomienda a Jehová tus obras, y tus pensamientos serán afirmados.'],
+  ['Salmos 37:21', 'El impío toma prestado, y no paga; mas el justo tiene misericordia, y da.'],
+  ['Proverbios 28:20', 'El hombre de verdad tendrá muchas bendiciones; mas el que se apresura a enriquecer, no será sin culpa.'],
+  ['2 Corintios 9:7', 'Cada uno dé como propuso en su corazón: no con tristeza, o por necesidad; porque Dios ama el dador alegre.'],
+  ['Proverbios 24:27', 'Apresta tus obras de afuera, y disponlas en tu heredad; y después edificarás tu casa.'],
+  ['1 Timoteo 6:10', 'Porque el amor del dinero es la raíz de todos los males.'],
+  ['Filipenses 4:11', 'He aprendido a contentarme con lo que tengo.'],
+  ['Proverbios 13:11', 'Disminuiráse la hacienda que fuere de vanidad; mas el que allega con su mano la aumenta.'],
+  ['Proverbios 11:25', 'El alma liberal será engordada; y el que saciare, él también será saciado.'],
+  ['Mateo 6:34', 'No os congojéis por el día de mañana; que el día de mañana traerá su fatiga: basta al día su afán.'],
+  ['Proverbios 15:22', 'Los pensamientos son frustrados donde no hay consejo; mas en la multitud de consejeros se afirman.'],
+  ['Proverbios 23:4-5', 'No trabajes por ser rico; pon coto a tu prudencia. ¿Has de poner tus ojos en las riquezas, siendo ningunas?'],
+  ['Eclesiastés 11:2', 'Reparte a siete, y aun a ocho; porque no sabes el mal que vendrá sobre la tierra.'],
+  ['Proverbios 30:8', 'Vanidad y palabra mentirosa aparta de mí; no me des pobreza ni riquezas; manténme del pan que me es necesario.'],
+  ['Deuteronomio 8:18', 'Acuérdate de Jehová tu Dios: porque él te da el poder para hacer las riquezas.'],
+  ['Proverbios 12:11', 'El que labra su tierra, se hartará de pan; mas el que sigue los vagabundos es falto de entendimiento.'],
+  ['Gálatas 6:9', 'No nos cansemos, pues, de hacer bien; que a su tiempo segaremos, si no hubiéremos desmayado.']
+];
+
+const CONSEJOS = [
+  'Antes de comprar algo que no planeaste, espera 24 horas. Si mañana todavía lo necesitas, decide con calma.',
+  'Págate a ti primero: aparta tu ahorro el mismo día que cobras, no lo que sobre al final del mes.',
+  'Un fondo de emergencia de $1,000 evita que una sorpresa termine en la tarjeta de crédito.',
+  'Paga más que el mínimo. Cada dólar extra va directo al saldo y deja de cobrar intereses.',
+  'Revisa tus suscripciones hoy. Las que no usaste este mes son dinero que se va sin avisar.',
+  'Usa efectivo para restaurantes y antojos por una semana. Ver salir los billetes cambia las decisiones.',
+  'Si una compra a crédito no la puedes pagar completa este mes, no la puedes pagar.',
+  'Anota hoy cada gasto, por pequeño que sea. Lo que no se mide, no se mejora.',
+  'Llama a tu banco y pide una tasa de interés más baja. Lo peor que puede pasar es que digan que no.',
+  'Haz la lista antes de ir al supermercado y no vayas con hambre.',
+  'El negocio y la casa en cuentas separadas: así sabes de verdad cuánto gana cada uno.',
+  'Celebra cada deuda que liquides. Las pequeñas victorias te dan fuerza para la siguiente.',
+  'Antes de un evento o viaje, junta el dinero primero. Financiarlo con tarjeta lo encarece.',
+  'Cocinar en casa dos veces más por semana puede ahorrar más de $100 al mes.',
+  'Pon tus pagos en automático para nunca pagar tarde. Un pago tarde puede subir tu interés.',
+  'No uses más del 30% del límite de tus tarjetas: ayuda a tu puntaje de crédito.',
+  'Habla de dinero en familia una vez por semana. Las metas compartidas se cumplen más rápido.',
+  'Cada aumento de ingreso, divídelo: una parte para disfrutar y otra para ahorrar o pagar deudas.',
+  'Compara la gasolina y los seguros cada año. Cambiar de proveedor también es ahorrar.',
+  'Antes de cada compra pregúntate: ¿lo necesito, o solo lo quiero ahora?',
+  'Un presupuesto no te quita libertad: te dice en qué puedes gastar sin culpa.',
+  'Ahorra las monedas y los billetes de $1. Al final del año pueden sumar cientos.',
+  'Si recibes un reembolso de impuestos, decide su destino antes de que llegue.',
+  'Evita comprar por ansiedad o cansancio. Las emociones fuertes son malas consejeras financieras.',
+  'Cuando termines de pagar una deuda, suma ese pago a la siguiente. Es la bola de nieve.',
+  'Revisa tu estado de cuenta completo cada mes: así detectas cargos que no reconoces.',
+  'Dar con generosidad y ahorrar con disciplina pueden ir juntos. Planéalos los dos.',
+  'Usa la regla de los 30 días para compras grandes: si después de un mes la quieres, cómprala sin deuda.',
+  'Tu salud financiera también es tranquilidad en casa. Cada buena decisión cuenta.',
+  'Invierte primero en aprender: un buen hábito vale más que una buena racha.',
+  'Hoy elige una cosa que no vas a comprar y guarda ese dinero en tu meta de ahorro.'
+];
+
+function mensajeDelDia(fecha = hoy()) {
+  const d = new Date(fecha + 'T12:00:00');
+  const n = Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 864e5) + d.getFullYear() * 7;
+  return { versiculo: VERSICULOS[n % VERSICULOS.length], consejo: CONSEJOS[(n * 7 + 3) % CONSEJOS.length] };
+}
+const modoMensaje = () => S.perfil.mensajeDia || 'ambos'; /* ambos | consejo | no */
+
+function tarjetaMensajeDia() {
+  const modo = modoMensaje();
+  if (modo === 'no') return '';
+  const { versiculo: [cita, texto], consejo } = mensajeDelDia();
+  return `<div class="card mensaje-dia">
+    <p class="md-titulo">✨ Para hoy</p>
+    ${modo === 'ambos' ? `<blockquote>“${esc(texto)}”<cite>${esc(cita)}</cite></blockquote>` : ''}
+    <p class="md-consejo">💡 ${esc(consejo)}</p>
+  </div>`;
+}
+
+/* Notificaciones: se muestran una vez al día cuando abres la app.
+   Para recibirlas aunque no abras la app, se agrega el mensaje diario al Calendario. */
+const notifPosible = () => 'Notification' in window && 'serviceWorker' in navigator;
+const notifActiva = () => notifPosible() && Notification.permission === 'granted' && S.perfil.notificaciones !== false;
+
+async function notificarMensajeDia() {
+  try {
+    if (!notifActiva() || localStorage.getItem('cff.notifDia') === hoy() || modoMensaje() === 'no') return;
+    const reg = await navigator.serviceWorker.ready;
+    const { versiculo: [cita, texto], consejo } = mensajeDelDia();
+    await reg.showNotification('✨ Tu mensaje de hoy', {
+      body: modoMensaje() === 'ambos' ? `“${texto}” (${cita})` : consejo,
+      icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', tag: 'mensaje-dia'
+    });
+    localStorage.setItem('cff.notifDia', hoy());
+  } catch (e) { /* las notificaciones nunca afectan la app */ }
+}
+
+function generarICSMensajes(dias = 60) {
+  const sello = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  const L = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Control Financiero Familiar//ES', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'X-WR-CALNAME:Mensaje del día · Mi Control'];
+  for (let i = 0; i < dias; i++) {
+    const f = sumarDias(hoy(), i);
+    const { versiculo: [cita, texto], consejo } = mensajeDelDia(f);
+    const titulo = modoMensaje() === 'consejo' ? '💡 ' + consejo : '✨ ' + cita + ' · Mi Control';
+    const desc = (modoMensaje() === 'consejo' ? '' : '“' + texto + '” (' + cita + ')\n\n') + '💡 ' + consejo + '\n\nAbre Mi Control: https://app.tribuinquebrantable.com';
+    L.push('BEGIN:VEVENT', 'UID:mensaje-' + f + '@control-financiero', 'DTSTAMP:' + sello,
+      'DTSTART;VALUE=DATE:' + fechaICS(f), 'DTEND;VALUE=DATE:' + fechaICS(sumarDias(f, 1)),
+      'SUMMARY:' + escICS(titulo), 'DESCRIPTION:' + escICS(desc), 'TRANSP:TRANSPARENT',
+      'BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:' + escICS(titulo), 'TRIGGER:PT8H', 'END:VALARM', 'END:VEVENT');
+  }
+  L.push('END:VCALENDAR');
+  return L.join('\r\n') + '\r\n';
+}
+
+ACC.mensajeDia = () => {
+  const modo = modoMensaje();
+  const permiso = notifPosible() ? Notification.permission : 'no';
+  hoja(`${cabecera('✨ Mensaje del día')}
+    <p class="ayuda">Cada día la app te muestra un versículo y un consejo de dinero y ahorro.</p>
+    <div class="segmento tres" style="margin-bottom:16px">
+      ${[['ambos', '📖 + 💡'], ['consejo', 'Solo 💡'], ['no', 'Apagado']].map(([k, t]) => `<button type="button" data-a="modoMensaje" data-id="${k}" class="${modo === k ? 'activo' : ''}">${t}</button>`).join('')}
+    </div>
+    <p class="grupo-titulo">Recibirlo cada mañana</p>
+    <div class="botones">
+      <button class="btn principal" data-a="mensajeCalendario">📅 Agregar al Calendario (8 a.m.)</button>
+      ${permiso === 'no' ? '' : `<button class="btn" data-a="activarNotif" ${permiso === 'granted' ? 'disabled' : ''}>${permiso === 'granted' ? '🔔 Notificaciones activadas' : '🔔 Activar notificaciones'}</button>`}
+    </div>
+    <p class="ayuda">El <b>Calendario</b> te avisa todos los días a las 8 a.m. aunque no abras la app (60 días; luego vuelve a agregarlo).
+    Las <b>notificaciones</b> llegan al abrir la app${/iPhone|iPad/.test(navigator.userAgent) ? ' y en el iPhone solo funcionan con la app instalada en tu pantalla de inicio' : ''}.</p>`);
+};
+ACC.modoMensaje = id => { S.perfil.mensajeDia = id; guardar(); pintar(); ACC.mensajeDia(); };
+ACC.mensajeCalendario = async () => {
+  const texto = generarICSMensajes();
+  unaVez('mensaje-calendario');
+  const archivo = new File([texto], 'mensaje-del-dia.ics', { type: 'text/calendar' });
+  try {
+    if (/iPhone|iPad|Android/.test(navigator.userAgent) && navigator.canShare && navigator.canShare({ files: [archivo] })) { await navigator.share({ files: [archivo], title: 'Mensaje del día · Mi Control' }); return; }
+  } catch (e) { if (e && e.name === 'AbortError') return; }
+  window.location.href = 'data:text/calendar;charset=utf-8,' + encodeURIComponent(texto);
+};
+ACC.activarNotif = async () => {
+  try {
+    const r = await Notification.requestPermission();
+    if (r === 'granted') { S.perfil.notificaciones = true; guardar(); localStorage.removeItem('cff.notifDia'); unaVez('notificaciones'); await notificarMensajeDia(); aviso('🔔 Notificaciones activadas'); }
+    else aviso('Las notificaciones quedaron bloqueadas. Puedes activarlas en los ajustes del teléfono.');
+  } catch (e) { aviso('Este teléfono no permite notificaciones desde aquí.'); }
+  ACC.mensajeDia();
+};
+
+
+/************************************************************
  * ARRANQUE
  ************************************************************/
 
@@ -4330,7 +4494,25 @@ try {
   localStorage.setItem('cff.version', VERSION);
 } catch (e) { /* sin almacenamiento no hay aviso */ }
 
+/* Aviso de la beta, una sola vez por teléfono */
+function avisoBeta() {
+  hoja(`${cabecera('🧪 Estás en la Beta')}
+    <p class="ayuda">Gracias por ser de las primeras familias en usar <b>Control Financiero Familiar</b>.</p>
+    <ul class="lista-beta">
+      <li>🎁 <b>Todo es gratis</b> durante la beta.</li>
+      <li>🛠️ Puede haber errores y cada semana llegan mejoras.</li>
+      <li>💾 Guarda tu copia seguido: <b>Ajustes → Guardar copia</b>.</li>
+      <li>💬 Cuéntanos qué te gusta y qué mejorarías.</li>
+    </ul>
+    <button class="btn principal ancho" data-a="betaOk">¡Entendido!</button>`);
+}
+ACC.betaOk = () => { try { localStorage.setItem('cff.beta', hoy()); } catch (e) { /* sin almacenamiento */ } cerrarHoja(); };
+try {
+  if (BETA && S.perfil.inicio && !localStorage.getItem('cff.beta') && !bloqueoActivo()) setTimeout(avisoBeta, 900);
+} catch (e) { /* sin almacenamiento */ }
+
 if (location.protocol.startsWith('http')) buscarVersion();
+setTimeout(notificarMensajeDia, 1500);
 
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
 
