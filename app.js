@@ -8,7 +8,7 @@
  ************************************************************/
 
 /* Al publicar un cambio: subir este número y el de version.json (deben ser iguales) */
-const VERSION = '0.18.0';
+const VERSION = '0.19.0';
 const BETA = true; /* quitar en el lanzamiento oficial */
 
 const CLAVE = 'cff.v1';
@@ -139,7 +139,9 @@ const nuevoEstado = () => ({
   catsPropias: {}, // categorías de gasto agregadas por la persona: {nombre: emoji}
   reglas: [],      // reglas aprendidas al importar: {texto, cat, ambito}
   eventos: [],     // eventos del negocio: {id, nombre, fecha, presupuesto, meta, cerrado}
-  reembolsos: []   // movimientos negocio ↔ casa: {id, tipo:'reembolso'|'prestamo', monto, fecha, nota}
+  reembolsos: [],  // movimientos negocio ↔ casa: {id, tipo:'reembolso'|'prestamo', monto, fecha, nota}
+  logros: {},      // logros ganados: {id: fecha}
+  retoDiario: {}   // reto del mes "Cuentas claras cada noche": {'AAAA-MM': {aceptado, dias: {fecha: 'si'|'cero'}}}
 });
 
 function leer() {
@@ -784,7 +786,7 @@ function vistaInicio() {
     mensaje = 'Vas en positivo, pero ' + altas[0].nombre + ' está usada al ' + Math.round(utilizacion(altas[0])) + '%.';
   }
 
-  let h = tarjetaActualizar() + tarjetaInstalar() + tarjetaRespaldo() + selectorVista() + tarjetaMensajeDia() + tarjetaCierre();
+  let h = tarjetaActualizar() + tarjetaInstalar() + tarjetaRespaldo() + selectorVista() + tarjetaRachas() + tarjetaRetoDiario() + tarjetaMensajeDia() + tarjetaCierre();
 
   h += tarjetaConfigurar();
 
@@ -4351,7 +4353,7 @@ function vistaProgreso() {
   </div>`;
 
   h += tarjetaFinCiclo();
-  h += tarjetaCierre(true);
+  h += tarjetaRachas() + tarjetaRetoDiario(true) + tarjetaCierre(true) + tarjetaLogros();
   h += `<div class="seccion"><h2>Indicadores</h2></div>` + tarjetaIndicadores();
   h += `<div class="seccion"><h2>Desempeño</h2></div>` + tarjetasGraficas() + tarjetaComparar(true);
   h += `<div class="seccion"><h2>Retos del mes</h2></div>` + RETOS_MES.map(r => tarjetaRetoMes(r)).join('');
@@ -4672,6 +4674,405 @@ async function notificarCierre() {
 
 
 /************************************************************
+ * JUEGO: LOGROS, RACHAS, METAS CON PLAN Y RETO DIARIO DEL MES
+ * Celebrar cada avance para que el hábito se mantenga vivo.
+ ************************************************************/
+
+/* ---------- Reto diario del mes: "¿Cuáles fueron tus gastos hoy?" (solo quien lo acepta) ---------- */
+
+const retoDiario = () => (S.retoDiario = S.retoDiario || {});
+const retoDelMes = (m = mesActual()) => retoDiario()[m] || null;
+const diasDelMes = m => new Date(Number(m.slice(0, 4)), Number(m.slice(5, 7)), 0).getDate();
+
+/* Noches seguidas cerrando el día (hoy cuenta si ya lo cerró; si no, se empieza a contar desde ayer) */
+function rachaDiaria() {
+  const marca = f => { const r = retoDelMes(f.slice(0, 7)); return r && r.dias && r.dias[f]; };
+  let f = marca(hoy()) ? hoy() : sumarDias(hoy(), -1);
+  let n = 0;
+  while (marca(f)) { n++; f = sumarDias(f, -1); }
+  return n;
+}
+const nochesDelMes = (m = mesActual()) => Object.keys((retoDelMes(m) || {}).dias || {}).length;
+
+/* Qué toca ahora: de noche (7 p.m. en adelante) anotar hoy; por la mañana, si se olvidó, anotar ayer */
+function turnoReto() {
+  const r = retoDelMes();
+  if (!r) return null;
+  const h = new Date().getHours();
+  const ayer = sumarDias(hoy(), -1);
+  const rAyer = retoDelMes(ayer.slice(0, 7));
+  if (h < 12 && rAyer && !(rAyer.dias || {})[ayer] && ayer >= rAyer.aceptado) return { fecha: ayer, ayer: true };
+  if (h >= 19 && !(r.dias || {})[hoy()]) return { fecha: hoy(), ayer: false };
+  return null;
+}
+
+function tarjetaRetoDiario(enProgreso) {
+  const m = mesActual();
+  const r = retoDelMes(m);
+  if (!r) {
+    if (!S.perfil.inicio || (!enProgreso && S.perfil.retoNo === m)) return '';
+    return `<div class="card reto-diario invitacion">
+      <span class="num">🎯 Reto del mes · ${esc(nombreMes(m))}</span>
+      <h3>🌙 Cuentas claras cada noche</h3>
+      <p>Cada noche, antes de dormir, anota en qué gastaste hoy. Toma 1 minuto. Quien lo hace 30 días deja de preguntarse "¿a dónde se fue mi dinero?".</p>
+      <ul class="premios"><li>🔥 Racha de noches</li><li>🏅 Medallas a los 7 y 30 días</li><li>🔔 Recordatorio cada noche</li></ul>
+      <div class="botones"><button class="btn chico principal" data-a="aceptarRetoDiario">¡Acepto el reto!</button>
+        ${enProgreso ? '' : '<button class="btn chico" data-a="retoNo">Ahora no</button>'}</div>
+    </div>`;
+  }
+  const t = turnoReto();
+  const racha = rachaDiaria();
+  const hechas = nochesDelMes(m);
+  const total = diasDelMes(m) - Number(r.aceptado.slice(8, 10)) + 1; /* noches desde que aceptó hasta fin de mes */
+  if (!t && !enProgreso) return '';
+  const gastosHoy = t ? S.mov.filter(x => x.tipo === 'gasto' && x.fecha === t.fecha) : [];
+  return `<div class="card reto-diario ${t ? 'noche' : ''}">
+    <span class="num">🎯 Reto del mes · ${hechas} de ${Math.max(hechas, total)} noches ${racha ? `· 🔥 ${racha} seguidas` : ''}</span>
+    ${t ? `<h3>${t.ayer ? '☀️ ¿Qué gastaste ayer?' : '🌙 ¿Cuáles fueron tus gastos hoy?'}</h3>
+      <p>${gastosHoy.length ? `Ya anotaste ${gastosHoy.length}: ${gastosHoy.slice(0, 4).map(g => esc(g.nota || g.cat) + ' ' + dinero(g.monto)).join(' · ')}${gastosHoy.length > 4 ? '…' : ''}. ¿Falta alguno?` : 'Repasa tu día: comida, gasolina, compras, antojos, pagos en efectivo.'}</p>
+      <div class="botones">
+        <button class="btn chico" data-a="anotarGastoReto" data-id="${t.fecha}">+ Anotar un gasto</button>
+        ${gastosHoy.length
+          ? `<button class="btn chico principal" data-a="cerrarDia" data-id="${t.fecha}|si">Listo, eso fue todo ✓</button>`
+          : `<button class="btn chico principal" data-a="cerrarDia" data-id="${t.fecha}|cero">Hoy no gasté nada 💪</button>`}
+      </div>`
+    : `<h3>🌙 Cuentas claras cada noche</h3>
+      <div class="barra"><i style="width:${pct(hechas, Math.max(1, total))}%"></i></div>
+      <p class="chico muted">${(retoDelMes(m).dias || {})[hoy()] ? 'Hoy ya cerraste tu día. ¡Nos vemos mañana en la noche!' : 'Esta noche, a partir de las 7, te toca anotar tu día.'}</p>
+      ${S.perfil.retoCalendario === m ? '' : '<div class="botones"><button class="btn chico" data-a="retoCalendario">🔔 Recordármelo cada noche</button></div>'}`}
+  </div>`;
+}
+
+ACC.aceptarRetoDiario = () => {
+  retoDiario()[mesActual()] = { aceptado: hoy(), dias: {} };
+  guardar();
+  unaVez('reto-diario-' + mesActual());
+  hoja(`${cabecera('🎯 ¡Reto aceptado!')}
+    <p class="ayuda">Desde hoy y hasta el final de ${esc(nombreMes(mesActual()))}, cada noche la app te preguntará <b>"¿Cuáles fueron tus gastos hoy?"</b>.</p>
+    <p class="ayuda">Para que no se te olvide, agrega el recordatorio: te llegará <b>cada noche a las 9 p.m.</b>, aunque no abras la app.</p>
+    <button class="btn principal ancho" data-a="retoCalendario">🔔 Recordármelo cada noche</button>
+    <button class="btn ancho" data-a="cerrar">Después</button>`);
+  pintar();
+};
+
+ACC.retoNo = () => { S.perfil.retoNo = mesActual(); guardar(); pintar(); aviso('Está en Progreso cuando quieras aceptarlo'); };
+
+ACC.anotarGastoReto = fecha => {
+  formMov('gasto');
+  setTimeout(() => { const f = $('#form'); if (f && f.elements.fecha) f.elements.fecha.value = fecha; }, 60);
+};
+
+ACC.cerrarDia = id => {
+  const [fecha, como] = id.split('|');
+  const r = retoDelMes(fecha.slice(0, 7));
+  if (!r) return;
+  r.dias = r.dias || {};
+  r.dias[fecha] = como;
+  guardar();
+  pintar();
+  const racha = rachaDiaria();
+  aviso(como === 'cero' ? `💪 ¡Un día sin gastar! Racha: ${racha} ${racha === 1 ? 'noche' : 'noches'}` : `🌙 Día cerrado. Racha: ${racha} ${racha === 1 ? 'noche' : 'noches'} 🔥`);
+};
+
+function generarICSReto() {
+  const m = mesActual();
+  const sello = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  const inicio = new Date().getHours() >= 21 ? sumarDias(hoy(), 1) : hoy();
+  const fin = m + '-' + String(diasDelMes(m)).padStart(2, '0');
+  return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Control Financiero Familiar//ES', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'X-WR-CALNAME:Reto del mes · Mi Control',
+    'BEGIN:VEVENT', 'UID:reto-diario-' + m + '@control-financiero', 'DTSTAMP:' + sello,
+    'DTSTART:' + fechaICS(inicio) + 'T210000', 'DTEND:' + fechaICS(inicio) + 'T210500',
+    'RRULE:FREQ=DAILY;UNTIL=' + fechaICS(fin) + 'T235959',
+    'SUMMARY:' + escICS('🌙 Reto del mes: ¿cuáles fueron tus gastos hoy?'),
+    'DESCRIPTION:' + escICS('1 minuto: anota tus gastos de hoy y cuida tu racha.\nhttps://app.tribuinquebrantable.com'),
+    'BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:' + escICS('🌙 ¿Cuáles fueron tus gastos hoy?'), 'TRIGGER:PT0S', 'END:VALARM',
+    'END:VEVENT', 'END:VCALENDAR'].join('\r\n') + '\r\n';
+}
+
+ACC.retoCalendario = async () => {
+  const texto = generarICSReto();
+  S.perfil.retoCalendario = mesActual();
+  guardar();
+  cerrarHoja();
+  aviso('🔔 Cada noche a las 9 p.m. te llegará el reto');
+  const archivo = new File([texto], 'reto-del-mes.ics', { type: 'text/calendar' });
+  try {
+    if (/iPhone|iPad|Android/.test(navigator.userAgent) && navigator.canShare && navigator.canShare({ files: [archivo] })) { await navigator.share({ files: [archivo], title: 'Reto del mes · Mi Control' }); pintar(); return; }
+  } catch (e) { if (e && e.name === 'AbortError') { S.perfil.retoCalendario = ''; guardar(); return; } }
+  window.location.href = 'data:text/calendar;charset=utf-8,' + encodeURIComponent(texto);
+  setTimeout(pintar, 500);
+};
+
+/* Aviso al abrir la app de noche, solo para quien aceptó el reto y activó notificaciones */
+async function notificarReto() {
+  try {
+    const t = turnoReto();
+    if (!t || !notifActiva() || localStorage.getItem('cff.notifReto') === t.fecha) return;
+    const reg = await navigator.serviceWorker.ready;
+    await reg.showNotification(t.ayer ? '☀️ ¿Qué gastaste ayer?' : '🌙 ¿Cuáles fueron tus gastos hoy?', { body: 'Reto del mes: 1 minuto para cuidar tu racha 🔥', icon: 'icons/icon-192.png', tag: 'reto-diario' });
+    localStorage.setItem('cff.notifReto', t.fecha);
+  } catch (e) { /* las notificaciones nunca afectan la app */ }
+}
+
+
+/* ---------- Metas como juego: niveles, plan y cómo lograrlas ---------- */
+
+const ICONOS_META = [['🛡️', 'Fondo de emergencia'], ['✈️', 'Viaje'], ['🚗', 'Carro'], ['🏠', 'Casa'], ['🎓', 'Estudios'], ['💍', 'Boda'], ['🎄', 'Fiestas'], ['📱', 'Compra'], ['💳', 'Pagar una deuda'], ['🎁', 'Otra']];
+const NIVELES_META = [
+  [0, '🌱', 'Semilla'], [25, '🌿', 'Brote'], [50, '🌳', 'Árbol'], [75, '🍎', 'Cosecha'], [100, '🏆', '¡Lograda!']
+];
+const nivelMeta = m => { const p = pct(m.actual, m.meta); let n = NIVELES_META[0]; NIVELES_META.forEach(x => { if (p >= x[0]) n = x; }); return n; };
+
+/* Cuánto apartar y cuándo se logra; con fecha meta o con el ritmo de los últimos 60 días */
+function planMeta(m) {
+  const falta = Math.max(0, r2(m.meta - m.actual));
+  if (!falta) return { falta, listo: true };
+  if (m.fecha && m.fecha > hoy()) {
+    const semanas = Math.max(1, diasEntre(hoy(), m.fecha) / 7);
+    return { falta, porSemana: Math.ceil(falta / semanas), porMes: Math.ceil(falta / (semanas / 4.345)), fecha: m.fecha };
+  }
+  const desde = sumarDias(hoy(), -60);
+  const ritmo = suma(S.aportes.filter(a => a.metaId === m.id && a.fecha >= desde), a => a.monto) / (60 / 30.4);
+  if (ritmo > 0) return { falta, porMes: Math.ceil(ritmo), estimada: sumarDias(hoy(), Math.ceil(falta / ritmo * 30.4)), ritmo: true };
+  return { falta, sinRitmo: true };
+}
+
+/* Ideas concretas para llegar antes, con los números de la familia */
+function ideasMeta(m) {
+  const plan = planMeta(m);
+  if (plan.listo) return [];
+  const ideas = [];
+  const pasado = gastosDeMes(mesAnterior());
+  const resto = suma(pasado.filter(g => g.cat === 'Restaurantes'), g => g.monto);
+  const subs = suma(pasado.filter(g => g.cat === 'Suscripciones'), g => g.monto);
+  const efectivo = suma(pasado.filter(g => g.pago === 'efectivo' || g.fuga), g => g.monto);
+  const meses = x => Math.ceil(plan.falta / x);
+  if (resto >= 40) ideas.push(`🍽️ Gastaste ${dinero(resto)} en restaurantes el mes pasado. Si lo bajas a la mitad, apartas ${dinero(resto / 2)} al mes y la logras en ${meses(resto / 2)} ${meses(resto / 2) === 1 ? 'mes' : 'meses'}.`);
+  if (subs >= 15) ideas.push(`📺 Tus suscripciones suman ${dinero(subs)} al mes. Cancela las que no usaste y manda ese dinero aquí.`);
+  if (efectivo >= 40) ideas.push(`💵 ${dinero(efectivo)} se fueron en gastos pequeños o "fugas" el mes pasado. Reto: guarda la mitad.`);
+  if (plan.porSemana) ideas.push(`🏦 Programa en tu banco una transferencia automática de ${dinero(plan.porSemana)} cada semana, el día que cobras. Lo que no ves, no lo gastas.`);
+  else { const semanal = Math.max(5, Math.ceil(plan.falta / 52 / 5) * 5); ideas.push(`📅 Aparta ${dinero(semanal)} cada semana, el día que cobras: la logras en un año.`); }
+  ideas.push('🪙 Cada vez que anotes un gasto, redondea al siguiente dólar y aparta la diferencia.');
+  if (m.icono === '🛡️' || /emergencia|protecci/i.test(m.nombre)) ideas.push('🛡️ Empieza por $1,000. Es lo que evita que un imprevisto termine en la tarjeta.');
+  return ideas.slice(0, 3);
+}
+
+function tarjetaMeta(m) {
+  const p = pct(m.actual, m.meta);
+  const [, emo, nombreNivel] = nivelMeta(m);
+  const plan = planMeta(m);
+  const ideas = ideasMeta(m);
+  return `<div class="card meta-juego ${plan.listo ? 'lograda' : ''}">
+    <div class="fila"><h2 style="margin:0">${m.icono || '🎯'} ${esc(m.nombre)}</h2><span class="etiqueta ${plan.listo ? 'green' : 'blue'}">${emo} ${nombreNivel}</span></div>
+    <div class="camino">${NIVELES_META.map(([n, e]) => `<span class="${p >= n ? 'ok' : ''}" title="${n}%">${e}</span>`).join('<i></i>')}</div>
+    <div class="barra"><i style="width:${p}%"></i></div>
+    <p class="chico muted" style="margin:0">${dinero(m.actual)} de ${dinero(m.meta)} · ${Math.round(p)}%${plan.listo ? ' · ¡meta cumplida! 🎉' : ' · faltan ' + dinero(plan.falta)}</p>
+    ${plan.listo ? '' : `<div class="plan-meta">
+      ${plan.porSemana ? `<p>🗓️ Para llegar el <b>${esc(fechaCorta(plan.fecha))}</b>: aparta <b>${dinero(plan.porSemana)} a la semana</b> (${dinero(plan.porMes)} al mes).</p>`
+        : plan.ritmo ? `<p>📈 A tu ritmo (${dinero(plan.porMes)} al mes) la logras el <b>${esc(fechaCorta(plan.estimada))}</b>.</p>`
+        : '<p>📌 Ponle una fecha y te digo cuánto apartar cada semana.</p>'}
+      <p class="chico muted" style="margin:10px 0 4px"><b>Cómo lograrla:</b></p>
+      <ul class="ideas">${ideas.map(i => `<li>${esc(i)}</li>`).join('')}</ul>
+    </div>`}
+    <div class="botones">
+      ${plan.listo ? '' : `<button class="btn chico principal" data-a="aportar" data-id="${m.id}">Aportar</button>`}
+      <button class="btn chico" data-a="editarMeta" data-id="${m.id}">Editar</button>
+    </div>
+  </div>`;
+}
+
+function vistaAhorrosJuego() {
+  if (!S.metas.length) {
+    return `<div class="card vacio">
+      <span class="emo">🌱</span>
+      <b>Planta tu primera meta.</b><br>Dile a la app para qué ahorras y te digo cuánto apartar y cómo llegar más rápido. Cada avance se celebra.
+      <div class="botones"><button class="btn principal" data-a="nuevaMeta">Crear mi meta</button></div>
+    </div>`;
+  }
+  const logradas = S.metas.filter(m => m.actual >= m.meta).length;
+  return `<div class="card">
+      <span class="muted chico">Tienes ahorrado</span>
+      <p class="grande verde">${dinero(ahorroTotal())}</p>
+      <p class="chico muted" style="margin:0">${S.metas.length} ${S.metas.length === 1 ? 'meta' : 'metas'}${logradas ? ` · 🏆 ${logradas} ${logradas === 1 ? 'lograda' : 'logradas'}` : ''}</p>
+    </div>` + S.metas.map(tarjetaMeta).join('') + `<button class="btn ancho" data-a="nuevaMeta">+ Crear otra meta</button>`;
+}
+VISTAS.ahorros = vistaAhorrosJuego;
+
+formMeta = function (m) {
+  formulario({
+    titulo: m ? 'Editar meta' : '🌱 Nueva meta',
+    ayuda: m ? '' : 'Ponle nombre, cuánto y para cuándo. La app te dirá cuánto apartar y celebrará cada avance.',
+    campos: [
+      { n: 'icono', t: 'select', l: '¿Qué tipo de meta?', ops: ICONOS_META.map(([e, t]) => [e, e + ' ' + t]) },
+      { n: 'nombre', t: 'texto', l: '¿Para qué ahorras?', req: true, ph: 'Ej. Fondo de emergencia' },
+      { n: 'meta', t: 'dinero', l: '¿Cuánto quieres juntar?', req: true },
+      { n: 'actual', t: 'dinero', l: '¿Cuánto tienes ya?' },
+      { n: 'fecha', t: 'fechaFutura', l: '¿Para cuándo la quieres? (opcional)' }
+    ],
+    valores: m || { icono: '🛡️' },
+    borrar: m ? () => { S.metas = S.metas.filter(x => x.id !== m.id); } : null,
+    guardar: v => {
+      if (m) Object.assign(m, v);
+      else { S.metas.push({ id: uid(), creada: hoy(), ...v }); aviso('🌱 ¡Meta plantada! Ahora a hacerla crecer'); }
+    }
+  });
+};
+
+
+/* ---------- Logros: medallas que se celebran y rachas que se cuidan ---------- */
+
+const logros = () => (S.logros = S.logros || {});
+const deudaInicioJuego = () => suma(S.deudas, d => Math.max(d.saldoInicial || 0, d.saldo || 0));
+const deudaHoy = () => suma(S.deudas, d => d.saldo || 0);
+const mesEnPresupuesto = () => {
+  const m = mesAnterior();
+  const g = gastosDeMes(m).filter(x => ambitoDe(x) === 'personal');
+  return presupuestoTotal() > 0 && g.length >= 10 && suma(g, x => x.monto) <= presupuestoTotal();
+};
+
+const LOGROS = [
+  { id: 'mapa', e: '🗺️', t: 'Tengo mi mapa', d: 'Terminaste la bienvenida guiada.', si: () => !!S.perfil.guiaHecha, pista: 'Haz la bienvenida guiada en Ajustes.' },
+  { id: 'primer-gasto', e: '✍️', t: 'Primer registro', d: 'Anotaste tu primer gasto.', si: () => S.mov.some(x => x.tipo === 'gasto'), pista: 'Anota un gasto con el botón +.' },
+  { id: 'primera-meta', e: '🌱', t: 'Sembrador', d: 'Creaste tu primera meta de ahorro.', si: () => S.metas.length > 0, pista: 'Crea una meta en la pestaña Ahorros.' },
+  { id: 'meta-25', e: '🌿', t: 'Primer brote', d: 'Una meta llegó al 25%.', si: () => S.metas.some(m => m.meta > 0 && m.actual / m.meta >= 0.25), pista: 'Lleva una meta al 25%.' },
+  { id: 'meta-50', e: '🌳', t: 'Mitad del camino', d: 'Una meta llegó al 50%.', si: () => S.metas.some(m => m.meta > 0 && m.actual / m.meta >= 0.5), pista: 'Lleva una meta al 50%.' },
+  { id: 'meta-100', e: '🏆', t: 'Meta cumplida', d: 'Lograste una meta completa.', si: () => S.metas.some(m => m.meta > 0 && m.actual >= m.meta), pista: 'Completa una meta.' },
+  { id: 'colchon', e: '🛡️', t: 'Colchón de $1,000', d: 'Tienes al menos $1,000 ahorrados.', si: () => ahorroTotal() >= 1000, pista: 'Junta $1,000 en tus metas.' },
+  { id: 'pago-extra', e: '💪', t: 'Más que el mínimo', d: 'Pagaste más del mínimo en una deuda.', si: () => S.pagos.some(p => { const d = S.deudas.find(x => x.id === p.deudaId); return d && d.minimo && p.monto > d.minimo; }), pista: 'Paga más que el mínimo en tu deuda prioritaria.' },
+  { id: 'deuda-5', e: '📉', t: 'Deuda abajo 5%', d: 'Bajaste 5% de lo que debías.', si: () => deudaInicioJuego() > 0 && deudaHoy() <= deudaInicioJuego() * 0.95, pista: 'Baja 5% el total de tus deudas.' },
+  { id: 'deuda-liquidada', e: '🎉', t: '¡Una menos!', d: 'Liquidaste una deuda completa.', si: () => S.deudas.some(d => (d.saldoInicial || 0) > 0 && d.saldo <= 0), pista: 'Termina de pagar una deuda.' },
+  { id: 'cierre-1', e: '📝', t: 'Primer cierre', d: 'Cerraste tu primera semana.', si: () => Object.keys(S.checkins || {}).length > 0, pista: 'Haz tu cierre de la semana.' },
+  { id: 'cierre-4', e: '🔥', t: 'Un mes cerrando', d: '4 semanas seguidas con cierre.', si: () => rachaCierre() >= 4, pista: 'Cierra 4 semanas seguidas.' },
+  { id: 'reto-aceptado', e: '🎯', t: 'Acepté el reto', d: 'Aceptaste el reto diario del mes.', si: () => Object.keys(retoDiario()).length > 0, pista: 'Acepta el reto "Cuentas claras cada noche".' },
+  { id: 'noches-7', e: '🌙', t: '7 noches seguidas', d: 'Una semana anotando tus gastos cada noche.', si: () => rachaDiaria() >= 7, pista: 'Anota tus gastos 7 noches seguidas.' },
+  { id: 'noches-30', e: '🌟', t: 'Mes de cuentas claras', d: '30 noches anotando tus gastos.', si: () => Object.values(retoDiario()).some(r => Object.keys(r.dias || {}).length >= 28), pista: 'Completa el reto diario de un mes.' },
+  { id: 'dia-cero', e: '🧘', t: 'Día sin gastar', d: 'Tuviste un día sin gastar nada.', si: () => Object.values(retoDiario()).some(r => Object.values(r.dias || {}).includes('cero')), pista: 'Ten un día sin gastar y márcalo en el reto.' },
+  { id: 'presupuesto', e: '🎯', t: 'Mes en presupuesto', d: 'Gastaste menos de lo planeado en un mes.', si: mesEnPresupuesto, pista: 'Termina un mes dentro de tu presupuesto.' },
+  { id: 'reto-mes', e: '🏅', t: 'Reto del ciclo', d: 'Cumpliste un reto de tu ciclo de 90 días.', si: () => Object.keys(S.retosMes || {}).length > 0, pista: 'Cumple un reto del mes en Progreso.' },
+  { id: 'copia', e: '💾', t: 'Precavido', d: 'Guardaste una copia de tus datos.', si: () => !!S.perfil.ultimoRespaldo, pista: 'Guarda una copia en Ajustes.' },
+  { id: 'ciclo-90', e: '👑', t: '90 días', d: 'Completaste un ciclo de 90 días.', si: () => programa().terminado || (S.ciclos || []).length > 0, pista: 'Completa tus 90 días.' }
+];
+
+/* Revisa logros después de cada cambio. La primera vez se registran sin fiesta (para no inundar). */
+let colaFiesta = [];
+function revisarLogros() {
+  const L = logros();
+  const primeraVez = !L._listo;
+  const nuevos = LOGROS.filter(l => !L[l.id] && (() => { try { return l.si(); } catch (e) { return false; } })());
+  if (!nuevos.length && !primeraVez) return;
+  nuevos.forEach(l => { L[l.id] = hoy(); });
+  /* Hitos de cada meta (25, 50, 75, 100%) también se celebran */
+  if (primeraVez) { L._listo = hoy(); try { localStorage.setItem(CLAVE, JSON.stringify(S)); } catch (e) {} return; }
+  try { localStorage.setItem(CLAVE, JSON.stringify(S)); } catch (e) { /* sin almacenamiento */ }
+  colaFiesta.push(...nuevos);
+}
+
+function revisarHitosMetas() {
+  let cambio = false;
+  S.metas.forEach(m => {
+    if (!m.meta) return;
+    m.hitos = m.hitos || [];
+    const p = m.actual / m.meta * 100;
+    [25, 50, 75, 100].forEach(h => {
+      if (p >= h && !m.hitos.includes(h)) {
+        m.hitos.push(h);
+        cambio = true;
+        const global = { 25: 'meta-25', 50: 'meta-50', 100: 'meta-100' }[h];
+        if (logros()._listo && !(global && !logros()[global])) colaFiesta.push({ e: h === 100 ? '🏆' : NIVELES_META.find(x => x[0] === h)[1], t: h === 100 ? '¡Meta cumplida!' : `¡${h}% de tu meta!`, d: `${m.icono || '🎯'} ${m.nombre}: ${dinero(m.actual)} de ${dinero(m.meta)}.`, meta: true });
+      }
+    });
+  });
+  if (cambio) { try { localStorage.setItem(CLAVE, JSON.stringify(S)); } catch (e) {} }
+}
+
+let enFiesta = false;
+function siguienteFiesta() {
+  /* Si hay una hoja abierta, la fiesta espera a que se cierre */
+  const fondo = document.getElementById("fondo");
+  if (colaFiesta.length && fondo && !fondo.hidden) { enFiesta = true; setTimeout(siguienteFiesta, 700); return; }
+  const l = colaFiesta.shift();
+  enFiesta = !!l;
+  if (l) fiesta(l);
+}
+
+function fiesta(l) {
+  const capa = document.createElement('div');
+  capa.className = 'fiesta';
+  const quieto = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const colores = ['#FFC83D', '#2EE59D', '#5CC8FF', '#FF7A90', '#FFFFFF'];
+  const confeti = quieto ? '' : Array.from({ length: 46 }, (_, i) =>
+    `<i style="left:${Math.random() * 100}%;background:${colores[i % colores.length]};animation-delay:${(Math.random() * 0.5).toFixed(2)}s;animation-duration:${(2 + Math.random() * 1.6).toFixed(2)}s;transform:rotate(${Math.round(Math.random() * 360)}deg)"></i>`).join('');
+  capa.innerHTML = `<div class="confeti">${confeti}</div>
+    <div class="medalla" role="dialog" aria-label="Logro desbloqueado">
+      <span class="sub">${l.meta ? 'Tu meta crece' : 'Logro desbloqueado'}</span>
+      <div class="emo">${l.e}</div>
+      <h2>${esc(l.t)}</h2>
+      <p>${esc(l.d)}</p>
+      <div class="botones">
+        ${l.meta ? '' : '<button class="btn chico" data-f="compartir">Compartir</button>'}
+        <button class="btn chico principal" data-f="seguir">¡Seguimos! ${colaFiesta.length ? '›' : ''}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(capa);
+  try { navigator.vibrate && navigator.vibrate([30, 40, 60]); } catch (e) {}
+  capa.addEventListener('click', async e => {
+    const b = e.target.closest('[data-f]');
+    if (!b) return;
+    if (b.dataset.f === 'compartir') {
+      const texto = `${l.e} Logré "${l.t}" en Control Financiero Familiar 💚 Ponte en control tú también:`;
+      try { if (navigator.share) await navigator.share({ title: 'Mi logro', text: texto, url: 'https://app.tribuinquebrantable.com/instalar' }); } catch (err) { /* cancelado */ }
+      return;
+    }
+    capa.remove();
+    siguienteFiesta();
+  });
+}
+
+function tarjetaRachas() {
+  const noches = rachaDiaria();
+  const semanas = rachaCierre();
+  const medallas = LOGROS.filter(l => logros()[l.id]).length;
+  if (!noches && !semanas && !medallas) return '';
+  const chip = (e, n, t) => `<span class="racha-chip"><b>${e} ${n}</b>${t}</span>`;
+  return `<button class="rachas" data-a="verLogros">
+    ${noches ? chip('🔥', noches, noches === 1 ? 'noche' : 'noches') : ''}
+    ${semanas ? chip('📝', semanas, semanas === 1 ? 'semana' : 'semanas') : ''}
+    ${chip('🏅', medallas, 'de ' + LOGROS.length + ' logros')}
+  </button>`;
+}
+
+function tarjetaLogros() {
+  const L = logros();
+  const ganados = LOGROS.filter(l => L[l.id]);
+  const siguientes = LOGROS.filter(l => !L[l.id]).slice(0, 3);
+  return `<div class="card logros">
+    <div class="fila"><h2 style="margin:0">🏅 Mis logros</h2><b>${ganados.length} de ${LOGROS.length}</b></div>
+    <div class="barra"><i style="width:${pct(ganados.length, LOGROS.length)}%"></i></div>
+    <div class="medallas">${LOGROS.map(l => `<button class="medallita ${L[l.id] ? 'ok' : ''}" data-a="verLogro" data-id="${l.id}" aria-label="${esc(l.t)}"><span>${L[l.id] ? l.e : '🔒'}</span><small>${esc(l.t)}</small></button>`).join('')}</div>
+    ${siguientes.length ? `<p class="chico muted" style="margin:14px 0 6px"><b>Tus próximos logros:</b></p><ul class="ideas">${siguientes.map(l => `<li>${l.e} <b>${esc(l.t)}</b>: ${esc(l.pista)}</li>`).join('')}</ul>` : '<p class="chico verde"><b>¡Tienes todos los logros! 👑</b></p>'}
+  </div>`;
+}
+
+ACC.verLogros = () => ir('retos');
+ACC.verLogro = id => {
+  const l = LOGROS.find(x => x.id === id);
+  if (!l) return;
+  const f = logros()[id];
+  if (f) fiesta({ ...l, d: l.d + ' Logrado el ' + fechaCorta(f) + '.' });
+  else hoja(`${cabecera('🔒 ' + l.t)}<p class="ayuda">${esc(l.d)}</p><p class="ayuda"><b>Cómo lograrlo:</b> ${esc(l.pista)}</p><button class="btn principal ancho" data-a="cerrar">Entendido</button>`);
+};
+
+/* Se revisa después de cada pantalla pintada */
+pintar = (fn => function () {
+  try { revisarHitosMetas(); revisarLogros(); } catch (e) { /* los logros nunca afectan la app */ }
+  fn();
+  try {
+    if (colaFiesta.length && !enFiesta) { enFiesta = true; setTimeout(siguienteFiesta, 450); }
+  } catch (e) { /* los logros nunca afectan la app */ }
+})(pintar);
+
+
+/************************************************************
  * ARRANQUE
  ************************************************************/
 
@@ -4715,6 +5116,7 @@ try {
 if (location.protocol.startsWith('http')) buscarVersion();
 setTimeout(notificarMensajeDia, 1500);
 setTimeout(notificarCierre, 2500);
+setTimeout(notificarReto, 3500);
 
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
 

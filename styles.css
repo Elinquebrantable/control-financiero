@@ -586,3 +586,44 @@ body.tapada #vista,body.tapada .tabs,body.tapada .fab,body.tapada .top,body.tapa
 .lista-cierre li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;font-size:14px;border-top:1px solid var(--border)}
 .lista-cierre li span{flex:0 0 22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:13px;font-weight:800;background:var(--sutil);color:var(--muted)}
 .lista-cierre li.ok span{background:var(--green-soft);color:var(--green)}
+
+/* ===== Juego: rachas, reto diario, metas y logros ===== */
+.rachas{display:flex;gap:8px;width:100%;margin:0 0 12px;padding:0;border:0;background:none;overflow-x:auto;font:inherit;color:inherit;text-align:left}
+.racha-chip{flex:1 0 auto;display:flex;flex-direction:column;gap:2px;padding:10px 12px;border-radius:16px;background:var(--sutil);border:1px solid var(--border);font-size:12px;color:var(--muted)}
+.racha-chip b{font-size:17px;color:var(--text)}
+.reto-diario{border:1.5px solid var(--yellow);background:linear-gradient(135deg,var(--card-a),var(--card-b))}
+.reto-diario.noche{border-color:var(--cyan);box-shadow:0 0 0 4px var(--cyan-soft)}
+.reto-diario .num{font-size:12px;font-weight:700;letter-spacing:.03em;color:var(--yellow);text-transform:uppercase}
+.reto-diario h3{margin:6px 0 6px;font-size:19px}
+.reto-diario p{margin:0 0 8px;color:var(--muted);font-size:14px;line-height:1.45}
+.premios{list-style:none;display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 6px;padding:0}
+.premios li{font-size:12px;font-weight:600;padding:5px 10px;border-radius:999px;background:var(--sutil);border:1px solid var(--border)}
+.meta-juego.lograda{border:1.5px solid var(--green)}
+.camino{display:flex;align-items:center;margin:14px 0 10px}
+.camino span{font-size:20px;filter:grayscale(1);opacity:.35;transition:.3s}
+.camino span.ok{filter:none;opacity:1}
+.camino i{flex:1;height:3px;margin:0 4px;border-radius:3px;background:var(--border)}
+.plan-meta{margin-top:12px;padding:12px 14px;border-radius:14px;background:var(--sutil)}
+.plan-meta p{margin:0;font-size:14px;line-height:1.45}
+.ideas{margin:0;padding:0 0 0 2px;list-style:none}
+.ideas li{font-size:13px;line-height:1.45;padding:5px 0;color:var(--text)}
+.logros .medallas{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:14px}
+.medallita{display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 4px;border-radius:14px;border:1px solid var(--border);background:var(--sutil);color:var(--muted);font:inherit;cursor:pointer}
+.medallita span{font-size:26px;filter:grayscale(1);opacity:.5}
+.medallita.ok{border-color:var(--yellow);background:var(--yellow-soft);color:var(--text)}
+.medallita.ok span{filter:none;opacity:1}
+.medallita small{font-size:10px;line-height:1.2;text-align:center}
+.fiesta{position:fixed;inset:0;z-index:3000;display:grid;place-items:center;background:rgba(5,12,20,.72);backdrop-filter:blur(4px);animation:aparecer .25s ease}
+.fiesta .confeti{position:absolute;inset:0;overflow:hidden;pointer-events:none}
+.fiesta .confeti i{position:absolute;top:-20px;width:9px;height:14px;border-radius:2px;animation:caer linear forwards}
+.medalla{position:relative;width:min(86vw,340px);padding:26px 22px 20px;border-radius:28px;text-align:center;background:linear-gradient(160deg,#1b4566,#0f2236);border:1.5px solid #FFC83D;box-shadow:0 20px 60px rgba(0,0,0,.5);color:#fff;animation:saltar .5s cubic-bezier(.2,1.6,.4,1)}
+.medalla .sub{font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#FFC83D}
+.medalla .emo{font-size:76px;line-height:1.1;margin:12px 0 4px;animation:girar 1.2s ease}
+.medalla h2{margin:0 0 6px;font-size:24px}
+.medalla p{margin:0 0 16px;color:#cfe0ee;font-size:15px;line-height:1.45}
+.medalla .botones{justify-content:center}
+@keyframes caer{to{transform:translateY(110vh) rotate(720deg)}}
+@keyframes saltar{from{transform:scale(.6);opacity:0}to{transform:scale(1);opacity:1}}
+@keyframes girar{0%{transform:rotateY(0) scale(.6)}60%{transform:rotateY(360deg) scale(1.15)}100%{transform:rotateY(360deg) scale(1)}}
+@keyframes aparecer{from{opacity:0}to{opacity:1}}
+@media (prefers-reduced-motion:reduce){.medalla,.medalla .emo,.fiesta{animation:none}}
