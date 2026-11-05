@@ -8,7 +8,7 @@
  ************************************************************/
 
 /* Al publicar un cambio: subir este número y el de version.json (deben ser iguales) */
-const VERSION = '0.16.0';
+const VERSION = '0.16.1';
 
 const CLAVE = 'cff.v1';
 const DIAS_PROGRAMA = 90;
@@ -2745,7 +2745,7 @@ ACC.quitarPin = () => {
  ************************************************************/
 
 /* Código de la cuenta de GoatCounter (ej. 'controlfinanciero'). Vacío = desactivado. */
-const GOATCOUNTER = '';
+const GOATCOUNTER = 'controlfinanciero';
 
 const estadisticasActivas = () => !!GOATCOUNTER && S.perfil.estadisticas !== false && location.protocol === 'https:';
 
