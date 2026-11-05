@@ -8,7 +8,7 @@
  ************************************************************/
 
 /* Al publicar un cambio: subir este número y el de version.json (deben ser iguales) */
-const VERSION = '0.13.0';
+const VERSION = '0.14.0';
 
 const CLAVE = 'cff.v1';
 const DIAS_PROGRAMA = 90;
@@ -785,6 +785,8 @@ function vistaInicio() {
 
   let h = tarjetaActualizar() + tarjetaInstalar() + tarjetaRespaldo() + selectorVista();
 
+  h += tarjetaConfigurar();
+
   /* Disponible para gastar (siempre el mes en curso) */
   h += `<div class="seccion"><h2>Disponible para gastar</h2>
     <button class="icono" data-a="ir" data-id="ingresos" aria-label="Ver ingresos"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h18l-7 8v6l-4 2v-8z"/></svg></button>
@@ -804,7 +806,7 @@ function vistaInicio() {
 
   h += tarjetaFinCiclo();
 
-  h += `<div class="seccion"><h2>Mis indicadores</h2><button class="icono" data-a="verRetos" aria-label="Ver progreso"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></button></div>` + tarjetaIndicadores(4);
+  if (S.deudas.length || S.cuentas.length || S.mov.length) h += `<div class="seccion"><h2>Mis indicadores</h2><button class="icono" data-a="verRetos" aria-label="Ver progreso"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></button></div>` + tarjetaIndicadores(4);
 
   h += seccionProximo();
 
@@ -2278,6 +2280,244 @@ function formEvento(e) {
 }
 
 /************************************************************
+ * BIENVENIDA GUIADA: 5 PASOS PARA ARMAR TU MAPA (≈10 MINUTOS)
+ * 1 Ingresos · 2 Gastos fijos · 3 Deudas · 4 Dinero · 5 Presupuesto
+ ************************************************************/
+
+const PASOS_GUIA = [
+  { n: 1, clave: 'ingresos', titulo: '¿Cuánto dinero entra cada mes?', icono: '💵',
+    ayuda: 'Anota cada fuente: salario, negocio, rentas, ayudas. Si cobras cada 15 días, pon el total del mes.' },
+  { n: 2, clave: 'fijos', titulo: '¿Qué pagas fijo cada mes?', icono: '📅',
+    ayuda: 'Llena solo lo que aplica. Lo que dejes vacío no se guarda. Los pagos de tarjetas van en el siguiente paso.' },
+  { n: 3, clave: 'deudas', titulo: '¿Qué debes?', icono: '💳',
+    ayuda: 'Tarjetas, préstamos, carro, préstamos familiares. Con el saldo, el interés (APR) y el mínimo armamos tu plan de salida.' },
+  { n: 4, clave: 'dinero', titulo: '¿Cuánto tienes hoy?', icono: '🏦',
+    ayuda: 'Lo que hay hoy en tus cuentas y en efectivo. Solo los últimos 4 números, nunca el número completo.' },
+  { n: 5, clave: 'presupuesto', titulo: 'Tu presupuesto del mes', icono: '🏠',
+    ayuda: 'Te sugerimos montos según tus ingresos y el promedio de familias en EE. UU. Ajústalos a tu realidad.' }
+];
+
+const FIJOS_SUGERIDOS = [
+  ['Renta o hipoteca', 'Vivienda'], ['Electricidad', 'Electricidad'], ['Agua', 'Agua'],
+  ['Internet y celular', 'Internet y teléfono'], ['Pago del carro', 'Transporte'], ['Seguro del carro', 'Seguros'],
+  ['Seguro médico', 'Salud'], ['Escuela o guardería', 'Hijos'], ['Diezmo o donación', 'Donaciones']
+];
+
+/* Estado de cada paso: ¿ya tiene datos? */
+const pasoListo = {
+  ingresos: () => S.fijos.some(f => f.tipo === 'ingreso'),
+  fijos: () => S.fijos.some(f => f.tipo === 'gasto') || !!(S.perfil.guiaSaltados || {}).fijos,
+  deudas: () => S.deudas.length > 0 || S.perfil.sinDeudas,
+  dinero: () => S.cuentas.length > 0,
+  presupuesto: () => presupuestoTotal() > 0
+};
+
+function inputGuia(c, v) {
+  const val = v ?? '';
+  if (c.t === 'select') {
+    return `<label class="g-${c.n}"><span>${esc(c.l)}</span><select data-campo="${c.n}">${c.ops.map(o => {
+      const [k, t] = Array.isArray(o) ? o : [o, o];
+      return `<option value="${esc(k)}" ${k === val ? 'selected' : ''}>${esc(t)}</option>`;
+    }).join('')}</select></label>`;
+  }
+  const dec = c.t === 'dinero' || c.t === 'numero';
+  return `<label class="g-${c.n}"><span>${esc(c.l)}</span><input data-campo="${c.n}" type="text" ${dec ? 'inputmode="decimal"' : ''} autocomplete="off"
+    value="${val === 0 ? '' : esc(val)}" placeholder="${esc(c.ph || (dec ? '0' : ''))}"></label>`;
+}
+
+let plantillaFila = null;
+const filaGuia = (campos, v = {}) => `<div class="fila-guia">${campos.map(c => inputGuia(c, v[c.n])).join('')}
+  <button type="button" class="quitar" data-a="guiaQuitar" aria-label="Quitar">✕</button></div>`;
+
+function camposPaso(clave) {
+  const amb = conNegocio() ? [{ n: 'ambito', t: 'select', l: 'De', ops: [['personal', '🏠 Casa'], ['negocio', '🏢 Negocio']] }] : [];
+  if (clave === 'ingresos') return [
+    { n: 'nombre', l: 'Fuente', ph: 'Ej. Salario' }, { n: 'monto', t: 'dinero', l: 'Al mes' },
+    { n: 'dia', t: 'numero', l: 'Día', ph: '15' }, { n: 'cat', t: 'select', l: 'Tipo', ops: Object.keys(CAT_INGRESO) }, ...amb];
+  if (clave === 'fijos') return [
+    { n: 'nombre', l: 'Gasto', ph: 'Ej. Gimnasio' }, { n: 'monto', t: 'dinero', l: 'Al mes' },
+    { n: 'dia', t: 'numero', l: 'Día', ph: '1' }, { n: 'cat', t: 'select', l: 'Categoría', ops: Object.keys(CAT_GASTO).map(c => [c, CAT_GASTO[c] + ' ' + nombreCat(c)]) }];
+  if (clave === 'deudas') return [
+    { n: 'nombre', l: 'Tarjeta o préstamo', ph: 'Ej. Visa del banco' }, { n: 'saldo', t: 'dinero', l: 'Debes' },
+    { n: 'apr', t: 'numero', l: 'Interés %', ph: '24.99' }, { n: 'minimo', t: 'dinero', l: 'Mínimo' },
+    { n: 'dia', t: 'numero', l: 'Día de pago', ph: '15' }, { n: 'limite', t: 'dinero', l: 'Límite' }, ...amb];
+  if (clave === 'dinero') return [
+    { n: 'nombre', l: 'Cuenta', ph: 'Ej. Cheques' }, { n: 'saldo', t: 'dinero', l: 'Hay hoy' },
+    { n: 'tipo', t: 'select', l: 'Tipo', ops: Object.keys(TIPO_CUENTA) }, ...amb];
+  return [];
+}
+
+function filasIniciales(clave) {
+  if (clave === 'ingresos') return S.fijos.some(f => f.tipo === 'ingreso') ? [{}] : [{ nombre: 'Salario', cat: 'Salario' }];
+  if (clave === 'fijos') {
+    const ya = new Set(S.fijos.map(f => f.nombre.toLowerCase()));
+    return FIJOS_SUGERIDOS.filter(([n]) => !ya.has(n.toLowerCase())).map(([nombre, cat]) => ({ nombre, cat }));
+  }
+  if (clave === 'deudas') return [{}, {}];
+  if (clave === 'dinero') return S.cuentas.length ? [{ tipo: 'Banco' }] : [{ nombre: 'Cuenta de cheques', tipo: 'Banco' }, { nombre: 'Ahorros', tipo: 'Ahorros' }, { nombre: 'Efectivo', tipo: 'Efectivo' }];
+  return [];
+}
+
+function yaRegistrado(clave) {
+  let lista = [];
+  if (clave === 'ingresos') lista = S.fijos.filter(f => f.tipo === 'ingreso').map(f => f.nombre + ' ' + dinero(f.monto));
+  if (clave === 'fijos') lista = S.fijos.filter(f => f.tipo === 'gasto').map(f => f.nombre + ' ' + dinero(f.monto));
+  if (clave === 'deudas') lista = S.deudas.map(d => d.nombre + ' ' + dinero(d.saldo));
+  if (clave === 'dinero') lista = S.cuentas.map(c => c.nombre + ' ' + dinero(c.saldo));
+  return lista.length ? `<p class="ayuda">Ya tienes: ${lista.slice(0, 6).map(esc).join(' · ')}${lista.length > 6 ? ' y ' + (lista.length - 6) + ' más' : ''}. Agrega solo lo que falte.</p>` : '';
+}
+
+function sugerenciaPresupuesto() {
+  const ingreso = ingresoPersonalMes();
+  const porFijos = {};
+  S.fijos.filter(f => f.tipo === 'gasto' && ambitoDe(f) === 'personal').forEach(f => { porFijos[f.cat] = (porFijos[f.cat] || 0) + f.monto; });
+  const cats = [...new Set([...Object.keys(REFERENCIA_USA), ...Object.keys(porFijos)])].filter(c => CAT_GASTO[c]);
+  return cats.map(c => {
+    const ref = ingreso && REFERENCIA_USA[c] ? Math.round(ingreso * REFERENCIA_USA[c] / 100 / 10) * 10 : 0;
+    const fijo = Math.ceil((porFijos[c] || 0) / 10) * 10;
+    return { cat: c, valor: (S.presupuesto || {})[c] || Math.max(ref, fijo), ref, fijo };
+  });
+}
+
+function abrirGuia(n) {
+  const p = PASOS_GUIA[n - 1];
+  if (!p) return resumenGuia();
+  S.perfil.guiaPaso = n; guardar();
+  const puntos = PASOS_GUIA.map(x => `<i class="${x.n < n ? 'hecho' : x.n === n ? 'actual' : ''}"></i>`).join('');
+  let cuerpo = '';
+  if (p.clave === 'presupuesto') {
+    const ingreso = ingresoPersonalMes();
+    const sug = sugerenciaPresupuesto();
+    cuerpo = `${ingreso ? `<p class="ayuda">Con un ingreso de <b>${dinero(ingreso)}</b> al mes. Incluye tus gastos fijos.</p>` : '<p class="ayuda">Sin ingresos registrados no podemos sugerir montos. Escríbelos tú o vuelve al paso 1.</p>'}
+      <div class="presu-guia">${sug.map(s => `<label><span>${CAT_GASTO[s.cat]} ${esc(nombreCat(s.cat))}${s.ref ? ` <small>EE. UU. ≈${REFERENCIA_USA[s.cat]}%</small>` : ''}</span>
+        <input data-cat="${esc(s.cat)}" type="text" inputmode="decimal" value="${s.valor || ''}" placeholder="0"></label>`).join('')}</div>
+      ${ingreso ? `<p class="ayuda" id="totalPresu"></p>` : ''}`;
+  } else {
+    const campos = camposPaso(p.clave);
+    plantillaFila = filaGuia(campos);
+    cuerpo = yaRegistrado(p.clave) +
+      `<div id="filasGuia">${filasIniciales(p.clave).map(v => filaGuia(campos, v)).join('')}</div>
+      <button type="button" class="btn chico ancho" data-a="guiaFila">+ Agregar otro</button>
+      ${p.clave === 'deudas' ? `<label class="campo check"><input type="checkbox" id="sinDeudasGuia" ${S.perfil.sinDeudas ? 'checked' : ''}><span>No tengo deudas</span></label>` : ''}
+      ${p.clave === 'dinero' ? `<p class="ayuda">¿Prefieres leerlo de un PDF? Termina la guía y usa <b>+ → Estado de cuenta</b>.</p>` : ''}`;
+  }
+  hoja(`
+    <div class="fila"><span class="chico muted">Paso ${n} de ${PASOS_GUIA.length}</span><button class="cerrar" data-a="guiaCerrar" aria-label="Cerrar">✕</button></div>
+    <div class="puntos-guia">${puntos}</div>
+    <h2 style="margin-top:12px">${p.icono} ${esc(p.titulo)}</h2>
+    <p class="ayuda">${esc(p.ayuda)}</p>
+    <div id="guia" data-clave="${p.clave}">${cuerpo}</div>
+    <div class="botones">
+      ${n > 1 ? '<button class="btn" data-a="guiaAtras">‹ Atrás</button>' : ''}
+      <button class="btn" data-a="guiaSaltar">Saltar</button>
+      <button class="btn principal" data-a="guiaSiguiente">${n === PASOS_GUIA.length ? 'Terminar ✓' : 'Siguiente ›'}</button>
+    </div>`);
+  const tot = $('#totalPresu');
+  if (tot) {
+    const calc = () => {
+      const t = [...document.querySelectorAll('.presu-guia input')].reduce((a, i) => a + num(i.value), 0);
+      const ing = ingresoPersonalMes();
+      const min = suma(S.deudas.filter(d => ambitoDe(d) === 'personal' && d.saldo > 0), d => d.minimo);
+      const queda = ing - t - min;
+      tot.innerHTML = `Presupuesto: <b>${dinero(t)}</b> + mínimos de deudas ${dinero(min)} → te quedan <b class="${queda < 0 ? 'rojo' : 'verde'}">${dinero(queda)}</b> al mes${queda < 0 ? '. No alcanza: baja algunas categorías o busca más ingresos.' : ' para ahorrar o pagar más deuda.'}`;
+    };
+    document.querySelectorAll('.presu-guia input').forEach(i => i.addEventListener('input', calc));
+    calc();
+  }
+}
+
+function leerFilasGuia() {
+  return [...document.querySelectorAll('#filasGuia .fila-guia')].map(f => {
+    const o = {};
+    f.querySelectorAll('[data-campo]').forEach(el => { o[el.dataset.campo] = el.value.trim(); });
+    return o;
+  });
+}
+
+function guardarPasoGuia(clave) {
+  const filas = clave === 'presupuesto' ? [] : leerFilasGuia();
+  const dia = v => Math.max(0, Math.min(31, Math.round(num(v)) || 0));
+  if (clave === 'ingresos') filas.filter(f => num(f.monto) > 0).forEach(f => S.fijos.push({
+    id: uid(), tipo: 'ingreso', nombre: f.nombre || f.cat, monto: r2(num(f.monto)), cat: f.cat || 'Salario', dia: dia(f.dia), cuenta: '', ambito: f.ambito || 'personal'
+  }));
+  if (clave === 'fijos') filas.filter(f => num(f.monto) > 0).forEach(f => S.fijos.push({
+    id: uid(), tipo: 'gasto', nombre: f.nombre || nombreCat(f.cat), monto: r2(num(f.monto)), cat: f.cat || 'Otros', dia: dia(f.dia), cuenta: '', ambito: 'personal'
+  }));
+  if (clave === 'deudas') {
+    filas.filter(f => num(f.saldo) > 0).forEach(f => S.deudas.push({
+      id: uid(), nombre: f.nombre || 'Deuda', tipo: 'Tarjeta', ultimos4: '', saldo: r2(num(f.saldo)), saldoInicial: r2(num(f.saldo)),
+      apr: r2(num(f.apr)), minimo: r2(num(f.minimo)), limite: r2(num(f.limite)), dia: dia(f.dia), ambito: f.ambito || 'personal', deNegocio: 0
+    }));
+    const sin = $('#sinDeudasGuia');
+    S.perfil.sinDeudas = !!(sin && sin.checked && !S.deudas.length);
+  }
+  if (clave === 'dinero') filas.filter(f => num(f.saldo) > 0).forEach(f => S.cuentas.push({
+    id: uid(), nombre: f.nombre || f.tipo, tipo: f.tipo || 'Banco', ultimos4: '', saldo: r2(num(f.saldo)), ambito: f.ambito || 'personal',
+    actualizada: hoy(), historial: [{ fecha: hoy(), saldo: r2(num(f.saldo)) }]
+  }));
+  if (clave === 'presupuesto') {
+    const p = {};
+    document.querySelectorAll('.presu-guia input').forEach(i => { const v = r2(num(i.value)); if (v > 0) p[i.dataset.cat] = v; });
+    if (Object.keys(p).length) S.presupuesto = p;
+  }
+  guardar();
+}
+
+ACC.guiaFila = () => { if (plantillaFila) $('#filasGuia').insertAdjacentHTML('beforeend', plantillaFila); };
+ACC.guiaQuitar = (id, b) => b.closest('.fila-guia').remove();
+ACC.guiaSiguiente = () => { const n = S.perfil.guiaPaso || 1; guardarPasoGuia(PASOS_GUIA[n - 1].clave); abrirGuia(n + 1); };
+ACC.guiaAtras = () => abrirGuia(Math.max(1, (S.perfil.guiaPaso || 1) - 1));
+ACC.guiaSaltar = () => {
+  const n = S.perfil.guiaPaso || 1;
+  S.perfil.guiaSaltados = { ...(S.perfil.guiaSaltados || {}), [PASOS_GUIA[n - 1].clave]: hoy() };
+  abrirGuia(n + 1);
+};
+ACC.guiaCerrar = () => { cerrarHoja(); pintar(); };
+ACC.guiaPaso = id => abrirGuia(Number(id) || 1);
+
+function resumenGuia() {
+  S.perfil.guiaHecha = hoy(); S.perfil.guiaPaso = 0; guardar();
+  const s = saludFinanciera();
+  const malos = s.factores.filter(f => !f.ok).slice(0, 3);
+  const plan = S.deudas.some(d => d.saldo > 0) ? simular(S.perfil.metodo || 'avalancha', 0, S.deudas.filter(d => ambitoDe(d) === 'personal')) : null;
+  const ingreso = ingresoPersonalMes();
+  const comprometido = presupuestoTotal() + suma(S.deudas.filter(d => ambitoDe(d) === 'personal' && d.saldo > 0), d => d.minimo);
+  hoja(`${cabecera('🎉 ¡Tu mapa está listo!')}
+    <div class="cuerpo" style="display:flex;align-items:center;gap:14px;margin-top:6px">
+      ${anillo(s.nota / 100, `<b class="${s.color}">${s.nota}</b><small>de 100</small>`, s.nota < 50)}
+      <div><span class="chico muted">Salud financiera de tu casa</span><p class="grande ${s.color}" style="font-size:26px">${esc(s.nivel)}</p></div>
+    </div>
+    ${ingreso ? `<p class="chico">Entra <b>${dinero(ingreso)}</b> al mes y ya tienes comprometidos <b>${dinero(comprometido)}</b> (presupuesto + mínimos). ${ingreso - comprometido >= 0 ? `Te quedan <b class="verde">${dinero(ingreso - comprometido)}</b>.` : `Te faltan <b class="rojo">${dinero(comprometido - ingreso)}</b> cada mes.`}</p>` : ''}
+    ${malos.length ? `<h2 style="margin-top:12px">Lo que más afecta tu casa</h2><ul class="consejos">${malos.map(f => `<li>⚠ ${esc(f.texto)}</li>`).join('')}</ul>` : ''}
+    ${plan && plan.pagado ? `<p class="chico">Pagando solo los mínimos sales de tus deudas en <b>${plan.meses} meses</b> y pagas <b>${dinero(plan.interes)}</b> en intereses. En <b>Deudas</b> puedes poner un extra al mes y ver cuánto te ahorras.</p>` : plan ? `<p class="chico rojo">Con solo los mínimos tus deudas no bajan: los intereses se comen el pago. Revisa tu plan de salida en <b>Deudas</b>.</p>` : ''}
+    <h2 style="margin-top:12px">Tu primer paso esta semana</h2>
+    <p class="chico">${S.deudas.some(d => d.saldo > 0) ? '📅 Agrega tus fechas de pago al Calendario para no pagar nunca más un cargo por atraso.' : '🐖 Crea tu fondo de emergencia en Ahorros y haz tu primer aporte, aunque sea pequeño.'} Y registra cada gasto con el botón +.</p>
+    <div class="botones">
+      ${S.deudas.some(d => d.saldo > 0) ? '<button class="btn" data-a="calendario">📅 Calendario de pagos</button>' : ''}
+      <button class="btn principal" data-a="guiaCerrar">Ir a mi Inicio</button>
+    </div>`);
+}
+
+/* Tarjeta en Inicio mientras la configuración esté incompleta */
+function tarjetaConfigurar() {
+  if (!S.perfil.inicio || S.perfil.guiaOculta) return '';
+  const items = PASOS_GUIA.map(p => ({ ...p, listo: pasoListo[p.clave]() }));
+  const hechos = items.filter(i => i.listo).length;
+  if (hechos === items.length) return '';
+  const siguiente = items.find(i => !i.listo);
+  return `<div class="card semaforo blue">
+    <div class="fila"><h2 style="margin:0">🚀 Configura tu app</h2><b>${hechos} de ${items.length}</b></div>
+    <div class="barra azul"><i style="width:${pct(hechos, items.length)}%"></i></div>
+    <ul class="pasos">${items.map(i => `<li class="${i.listo ? 'ok' : ''}"><button type="button" class="enlace" data-a="guiaPaso" data-id="${i.n}">${i.listo ? '✓' : '○'} ${i.icono} ${esc(i.titulo)}</button></li>`).join('')}</ul>
+    <div class="botones">
+      <button class="btn chico principal" data-a="guiaPaso" data-id="${siguiente.n}">Continuar: paso ${siguiente.n}</button>
+      <button class="btn chico" data-a="guiaOcultar">Ocultar</button>
+    </div>
+  </div>`;
+}
+ACC.guiaOcultar = () => { S.perfil.guiaOculta = true; guardar(); pintar(); aviso('Puedes volver a la guía desde ☰ → Bienvenida guiada'); };
+
+/************************************************************
  * PERSONAL | NEGOCIO | TODO
  ************************************************************/
 
@@ -3176,6 +3416,7 @@ function abrirAjustes() {
 
     <p class="grupo-titulo">General</p>
     <div class="grupo">
+      ${filaAjuste({ a: 'guiaPaso', id: '1', ic: 'casa', titulo: 'Bienvenida guiada', sub: S.perfil.guiaHecha ? 'Hecha el ' + fechaCorta(S.perfil.guiaHecha) + ' · repetir o agregar' : 'Arma tu mapa en 5 pasos' })}
       ${filaAjuste({ a: 'ir', id: 'ingresos', ic: 'ingresos', titulo: 'Ingresos', sub: 'Fuentes de ingreso y cobros del mes' })}
       ${filaAjuste({ a: 'categorias', ic: 'pyg', titulo: 'Categorías de gastos', sub: Object.keys(S.catsPropias || {}).length ? Object.keys(S.catsPropias).length + ' propias · agrega productos o servicios' : 'Agrega productos o servicios' })}
       ${filaAjuste({ a: 'editarPresupuesto', ic: 'casa', titulo: 'Presupuesto de la casa', sub: presupuestoTotal() ? dinero(presupuestoTotal()) + ' al mes' : 'Sin definir' })}
@@ -3769,17 +4010,20 @@ function vistaProgreso() {
 function bienvenida() {
   formulario({
     titulo: 'Bienvenido 👋',
-    ayuda: 'Aquí llevas tus gastos, ingresos, deudas y ahorros, con un reto cada semana durante 90 días. Todo se guarda solo en tu teléfono.',
+    ayuda: 'En 10 minutos armamos el mapa de tu dinero: lo que entra, lo que pagas, lo que debes y lo que tienes. Al final verás la salud financiera de tu casa y tu primer paso. Todo se guarda solo en tu teléfono.',
     campos: [
       { n: 'nombre', t: 'texto', l: '¿Cómo te llamas?', ph: 'Tu nombre' },
-      { n: 'correo', t: 'texto', l: 'Tu correo (opcional, para recordatorios)', ph: 'tu@correo.com' }
+      { n: 'correo', t: 'texto', l: 'Tu correo (opcional, para recordatorios)', ph: 'tu@correo.com' },
+      { n: 'negocio', t: 'texto', l: '¿Tienes negocio propio? Escribe su nombre (opcional)', ph: 'Ej. Mi Empresa LLC' }
     ],
-    texto: 'Empezar mis 90 días',
+    texto: 'Empezar: armar mi mapa (10 min)',
     sinCerrar: true,
     guardar: v => {
       S.perfil.nombre = v.nombre;
       S.perfil.correo = correoValido(v.correo) ? v.correo.trim().toLowerCase() : '';
+      S.perfil.negocio = (v.negocio || '').trim();
       S.perfil.inicio = hoy();
+      setTimeout(() => abrirGuia(1), 80);
     }
   });
 }

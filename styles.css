@@ -511,3 +511,31 @@ a.btn.principal{color:var(--sobre-cyan)}
   border:1px solid var(--border);border-radius:10px;background:var(--sutil);color:var(--text);
 }
 .dato > span + b + span{display:block;font-size:11px;color:var(--muted);margin-top:2px}
+
+/* BIENVENIDA GUIADA */
+
+.puntos-guia{display:flex;gap:6px;margin-top:10px}
+.puntos-guia i{flex:1;height:6px;border-radius:99px;background:var(--pista)}
+.puntos-guia i.hecho{background:var(--green)}
+.puntos-guia i.actual{background:var(--cyan)}
+.fila-guia{
+  position:relative;display:grid;grid-template-columns:1fr 1fr;gap:8px;
+  padding:12px 12px 10px;margin-top:10px;border:1px solid var(--border);border-radius:18px;background:var(--sutil);
+}
+.fila-guia label{display:block;min-width:0}
+.fila-guia label span{display:block;font-size:11px;font-weight:600;color:var(--muted);margin-bottom:4px}
+.fila-guia .g-nombre{grid-column:1 / -1;padding-right:34px}
+.fila-guia input,.fila-guia select,.presu-guia input{
+  width:100%;min-height:44px;padding:0 12px;border:1px solid var(--border);border-radius:12px;
+  background:var(--card-b);color:var(--text);font-size:16px;
+}
+.fila-guia .quitar{
+  position:absolute;top:8px;right:8px;width:30px;height:30px;border-radius:50%;
+  border:0;background:var(--sutil);color:var(--muted);font-size:13px;
+}
+.presu-guia{display:grid;grid-template-columns:1fr;gap:8px;margin-top:10px}
+.presu-guia label{display:flex;align-items:center;gap:10px}
+.presu-guia label span{flex:1;font-size:14px}
+.presu-guia label span small{display:block;color:var(--muted);font-size:11px}
+.presu-guia input{width:110px;flex:none;text-align:right}
+.enlace{all:unset;cursor:pointer;color:inherit}
