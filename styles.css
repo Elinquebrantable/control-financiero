@@ -269,3 +269,22 @@ main{padding:16px;max-width:640px;margin:0 auto}
 .factura.grande{max-height:none;object-fit:contain;cursor:zoom-out}
 a.btn{text-decoration:none;color:inherit}
 a.btn.principal{color:#fff}
+
+/* PERSONAL | NEGOCIO | TODO */
+
+.segmento.tres{grid-template-columns:1fr 1fr 1fr}
+.segmento.tres button{font-size:14px;padding:0 4px}
+
+.tabla{width:100%;border-collapse:collapse;font-size:14px;margin-top:6px}
+.tabla th,.tabla td{padding:8px 4px;border-top:1px solid var(--border);text-align:right;vertical-align:top}
+.tabla thead th{border-top:0;font-size:12px;color:var(--muted);font-weight:700}
+.tabla tbody th{text-align:left;font-weight:400;color:var(--muted)}
+.tabla td{font-weight:700;white-space:nowrap}
+.tabla td.rojo{color:var(--red)}
+
+.consejos{margin:6px 0 0;padding:0;list-style:none}
+.consejos li{font-size:14px;padding:9px 0;border-top:1px solid var(--border)}
+.consejos li:first-child{border-top:0}
+.segmento.tres{background:var(--white);border:1px solid var(--border)}
+.segmento.tres button.activo{background:var(--dark);color:#fff}
+@media (prefers-color-scheme:dark){.segmento.tres button.activo{background:var(--green);color:#fff}}
