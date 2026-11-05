@@ -500,3 +500,14 @@ a.btn.principal{color:var(--sobre-cyan)}
 .hero .cifras b.verde{color:var(--green)}
 .hero .cifras b.amarillo{color:var(--yellow)}
 .hero .cifras b.rojo{color:var(--red)}
+
+/* IMPORTAR MOVIMIENTOS */
+
+.importar li{align-items:flex-start}
+.importar li.omitido{opacity:.5}
+.importar .selects{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.importar select{
+  max-width:100%;min-height:36px;padding:0 10px;font-size:13px;
+  border:1px solid var(--border);border-radius:10px;background:var(--sutil);color:var(--text);
+}
+.dato > span + b + span{display:block;font-size:11px;color:var(--muted);margin-top:2px}

@@ -8,7 +8,7 @@
  ************************************************************/
 
 /* Al publicar un cambio: subir este número y el de version.json (deben ser iguales) */
-const VERSION = '0.12.0';
+const VERSION = '0.13.0';
 
 const CLAVE = 'cff.v1';
 const DIAS_PROGRAMA = 90;
@@ -17,7 +17,7 @@ const SEMANAS = 13;
 const CAT_GASTO = {
   'Comida': '🛒', 'Restaurantes': '🍽️', 'Vivienda': '🏠', 'Electricidad': '⚡', 'Agua': '💧',
   'Servicios': '🔥', 'Internet y teléfono': '📱', 'Transporte': '🚗', 'Gasolina': '⛽', 'Seguros': '🛡️',
-  'Salud': '🩺', 'Cuidado personal': '💇', 'Hijos': '🧒', 'Educación': '🎓', 'Mascotas': '🐾',
+  'Salud': '🩺', 'Cuidado personal': '💇', 'Hijos': '🧒', 'Educación': '🎓', 'Viajes': '✈️', 'Mascotas': '🐾',
   'Diversión': '🎉', 'Ropa': '👕', 'Suscripciones': '📺', 'Donaciones': '🙏', 'Otros': '📦'
 };
 /* Nombre que se muestra (la clave se guarda igual para no romper datos viejos) */
@@ -135,7 +135,10 @@ const nuevoEstado = () => ({
   ciclo: null,   // ciclo de 90 días en curso: {n, inicio, base, cortes}
   ciclos: [],    // resúmenes de ciclos terminados
   retosMes: {},  // retos del mes logrados: {n: fecha}
-  catsPropias: {} // categorías de gasto agregadas por la persona: {nombre: emoji}
+  catsPropias: {}, // categorías de gasto agregadas por la persona: {nombre: emoji}
+  reglas: [],      // reglas aprendidas al importar: {texto, cat, ambito}
+  eventos: [],     // eventos del negocio: {id, nombre, fecha, presupuesto, meta, cerrado}
+  reembolsos: []   // movimientos negocio ↔ casa: {id, tipo:'reembolso'|'prestamo', monto, fecha, nota}
 });
 
 function leer() {
@@ -826,6 +829,7 @@ function vistaInicio() {
   </div>`;
 
   if (esteMes && vistaElegida() === 'todo') h += tarjetaPanorama();
+  if (esteMes && conNegocio() && vistaElegida() !== 'personal') h += tarjetaNegocioCasa();
 
   if (!p.terminado) {
     const hecho = S.retos[reto.n];
@@ -841,7 +845,7 @@ function vistaInicio() {
 
   if (esteMes) h += tarjetaFijos() + tarjetaDinero();
 
-  if (vistaElegida() !== 'personal' && conNegocio()) h += tarjetaPyG();
+  if (vistaElegida() !== 'personal' && conNegocio()) h += tarjetaPyG() + tarjetaEventos();
 
   const gastos = r.lista.filter(x => x.k === 'mov' && x.tipo === 'gasto');
   if (vistaElegida() !== 'negocio') {
@@ -1029,7 +1033,7 @@ function vistaIngresos() {
     : `<div class="vacio"><span class="emo">💵</span>Todavía no registras cobros este mes. Cuando entre un fijo tócalo en Inicio ("Ya entró") o usa "+ Registrar cobro".</div>`;
   h += `</div>`;
 
-  if (vistaElegida() !== 'personal' && conNegocio()) h += tarjetaPyG();
+  if (vistaElegida() !== 'personal' && conNegocio()) h += tarjetaPyG() + tarjetaEventos();
   return h;
 }
 
@@ -1840,6 +1844,440 @@ function tarjetaSalud() {
 }
 
 /************************************************************
+ * CALENDARIO DE PAGOS (.ics) PARA EL IPHONE
+ * Crea eventos que se repiten cada mes con alarma, sin servidor.
+ ************************************************************/
+
+const escICS = t => String(t).replace(/\\/g, '\\\\').replace(/[,;]/g, m => '\\' + m).replace(/\n/g, '\\n');
+const fechaICS = f => f.replace(/-/g, '');
+
+function generarICS() {
+  const sello = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  const L = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Control Financiero Familiar//ES', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'X-WR-CALNAME:Pagos · Mi Control'];
+  let n = 0;
+  const evento = ({ id, fecha, titulo, desc, mensual, dia, alarmas }) => {
+    n++;
+    L.push('BEGIN:VEVENT', 'UID:' + id + '@control-financiero', 'DTSTAMP:' + sello,
+      'DTSTART;VALUE=DATE:' + fechaICS(fecha), 'DTEND;VALUE=DATE:' + fechaICS(sumarDias(fecha, 1)),
+      'SUMMARY:' + escICS(titulo), 'DESCRIPTION:' + escICS(desc || ''), 'TRANSP:TRANSPARENT');
+    if (mensual) L.push('RRULE:FREQ=MONTHLY;BYMONTHDAY=' + (dia > 28 ? -1 : dia));
+    (alarmas || []).forEach(a => L.push('BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:' + escICS(titulo), 'TRIGGER:' + a, 'END:VALARM'));
+    L.push('END:VEVENT');
+  };
+  const proxima = dia => sumarDias(hoy(), diasParaDia(dia) || 0);
+
+  S.deudas.filter(d => d.saldo > 0 && d.dia).forEach(d => evento({
+    id: 'deuda-' + d.id, fecha: proxima(d.dia), mensual: true, dia: Number(d.dia),
+    titulo: '💳 Pagar ' + d.nombre + (d.ultimos4 ? ' ••' + d.ultimos4 : '') + (d.minimo ? ' · mín. ' + dinero(d.minimo) : ''),
+    desc: 'Paga al menos el mínimo antes de esta fecha. Si puedes, paga más: cada dólar extra baja los intereses.',
+    alarmas: ['-P2DT15H', 'PT9H'] /* 3 días antes a las 9 a.m. y el mismo día a las 9 a.m. */
+  }));
+  S.fijos.filter(f => f.tipo === 'gasto' && f.dia).forEach(f => evento({
+    id: 'fijo-' + f.id, fecha: proxima(f.dia), mensual: true, dia: Number(f.dia),
+    titulo: '📅 ' + f.nombre + ' · ' + dinero(f.monto), alarmas: ['-PT15H']
+  }));
+  S.fijos.filter(f => f.tipo === 'ingreso' && f.dia).forEach(f => evento({
+    id: 'ingreso-' + f.id, fecha: proxima(f.dia), mensual: true, dia: Number(f.dia),
+    titulo: '💵 Entra ' + f.nombre + ' · ' + dinero(f.monto), desc: 'Antes de gastar: reparte este ingreso (casa, deudas, ahorro).', alarmas: ['PT9H']
+  }));
+  S.deudas.filter(d => promoActiva(d)).forEach(d => evento({
+    id: 'promo-' + d.id, fecha: d.promoFin,
+    titulo: '⏳ Termina el ' + (d.apr || 0) + '% de ' + d.nombre + (d.aprDespues ? ' → ' + d.aprDespues + '%' : ''),
+    desc: 'Saldo: ' + dinero(d.saldo) + '. Ten listo tu plan antes de esta fecha.',
+    alarmas: ['-P30D', '-P7D', '-P1D']
+  }));
+  (S.eventos || []).filter(e => !e.cerrado && e.fecha && e.fecha >= hoy()).forEach(e => evento({
+    id: 'evento-' + e.id, fecha: e.fecha, titulo: '🎪 Evento: ' + e.nombre,
+    desc: 'Regla: solo se compra con dinero ya cobrado.', alarmas: ['-P30D', '-P7D']
+  }));
+  L.push('END:VCALENDAR');
+  return { texto: L.join('\r\n') + '\r\n', n };
+}
+
+ACC.calendario = () => {
+  const { n } = generarICS();
+  hoja(`${cabecera('📅 Pagos en tu Calendario')}
+    <p class="ayuda">Se crean <b>${n} recordatorios</b> que se repiten cada mes: tus pagos de tarjetas (aviso 3 días antes y el mismo día), gastos e ingresos fijos, fin de promociones (30, 7 y 1 día antes) y tus eventos.</p>
+    <div class="botones">
+      <button class="btn principal" data-a="calendarioAbrir">Agregar al Calendario</button>
+      <button class="btn" data-a="calendarioCompartir">Guardar o compartir archivo</button>
+    </div>
+    <p class="ayuda">En el iPhone, toca <b>"Agregar todo"</b> cuando aparezca. Si cambias tus tarjetas o fechas, vuelve a generarlo y borra el calendario anterior.</p>`);
+};
+ACC.calendarioAbrir = () => {
+  const { texto } = generarICS();
+  window.location.href = 'data:text/calendar;charset=utf-8,' + encodeURIComponent(texto);
+};
+ACC.calendarioCompartir = async () => {
+  const { texto } = generarICS();
+  const archivo = new File([texto], 'pagos-mi-control.ics', { type: 'text/calendar' });
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [archivo] })) { await navigator.share({ files: [archivo], title: 'Pagos · Mi Control' }); return; }
+  } catch (e) { if (e && e.name === 'AbortError') return; }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(archivo); a.download = archivo.name;
+  document.body.appendChild(a); a.click(); a.remove();
+};
+
+
+/************************************************************
+ * IMPORTAR MOVIMIENTOS (CSV) CON REGLAS DE CATEGORÍAS
+ * Amex, Chase, Bank of America, Wells Fargo, Capital One, Discover…
+ * Se lee en el teléfono; nada se envía a ningún lado.
+ ************************************************************/
+
+/* Reglas incluidas: texto del comercio → categoría (y ámbito si es claramente del negocio) */
+const REGLAS_BASE = [
+  [/SHELL|EXXON|CHEVRON|\bBP\b|SUNOCO|MARATHON|WAWA|RACETRAC|CITGO|SPEEDWAY|MOBIL|VALERO|CIRCLE K|7-ELEVEN.*FUEL|MURPHY|QT\b|QUIKTRIP|ULTRA TOP FUEL|GAS SE|FUEL/, 'Gasolina'],
+  [/PUBLIX|WAL-?MART(?!.*GAS)|KROGER|ALDI|COSTCO|TARGET|WHOLE ?FOODS|SAMS ?CLUB|WINN.?DIXIE|TRADER JOE|SEDANO|FRESCO|FOOD ?LION|HEB\b|SPROUTS|SUPERMARKET|GROCERY/, 'Comida'],
+  [/MCDONALD|STARBUCKS|RESTAURANT|GRILL|PIZZA|TACO|CHIPOTLE|WENDY|BURGER|DOORDASH|UBER ?\*? ?EATS|GRUBHUB|STEAK|KPOT|CAFE|BBQ|DUNKIN|CHICK-?FIL|SUBWAY|PANERA|OLIVE GARDEN|LONGHORN|TST\*|SQ \*|DENNY|IHOP|POPEYES|KFC/, 'Restaurantes'],
+  [/DUKE ENERGY|TECO|\bFPL\b|FLORIDA POWER|ELECTRIC|ENERGY|POWER CO|WITHLACOOCHEE|SECO ENERGY/, 'Electricidad'],
+  [/WATER|UTILIT|SEWER|PASCO COUNTY UTIL/, 'Agua'],
+  [/AT&T|VERIZON|T-?MOBILE|SPECTRUM|XFINITY|COMCAST|CRICKET|BOOST|FRONTIER|METRO ?PCS|STARLINK/, 'Internet y teléfono'],
+  [/NETFLIX|SPOTIFY|HULU|DISNEY|APPLE\.COM\/BILL|PRIME VIDEO|YOUTUBE|HBO|MAX\.COM|PARAMOUNT|PEACOCK|AUDIBLE|SIRIUS/, 'Suscripciones'],
+  [/GEICO|PROGRESSIVE|STATE FARM|ALLSTATE|INSURANCE|SEGURO|LIBERTY MUTUAL|USAA/, 'Seguros'],
+  [/CVS|WALGREENS|PHARMACY|CLINIC|MEDICAL|DENTAL|HOSPITAL|DOCTOR|URGENT CARE|LAB ?CORP|QUEST/, 'Salud'],
+  [/UBER(?! ?\*? ?EATS)|LYFT|TOLL|SUNPASS|PARKING|E-?TOLL|AUTOZONE|JIFFY|PEP BOYS|CAR ?WASH|ADVANCE AUTO|O.?REILLY|BRIGHTLINE/, 'Transporte'],
+  [/DELTA|AMERICAN AIR|SOUTHWEST|UNITED AIR|JETBLUE|SPIRIT|FRONTIER AIR|AVIANCA|HILTON|MARRIOTT|SHERATON|HYATT|EMBASSY|HAMPTON|DOUBLETREE|AIRBNB|EXPEDIA|HOTEL|ALOFT|COURTYARD|SPRINGHILL/, 'Viajes'],
+  [/PETSMART|PETCO|CHEWY|VET\b|VETERIN/, 'Mascotas'],
+  [/\bRENT\b|LANDLORD|MORTGAGE|HIPOTECA|\bHOA\b|PROPERTY MGMT|APARTMENTS/, 'Vivienda'],
+  [/CHURCH|IGLESIA|TITHE|DIEZMO|DONATION|GOFUNDME/, 'Donaciones'],
+  [/AMAZON|AMZN/, 'Otros'],
+  [/THRYV|HIGHLEVEL|GOHIGHLEVEL|OPENAI|ANTHROPIC|GOOGLE ?\*? ?WORKSPACE|ADOBE|CANVA|ZOOM\.US|VIMEO|TWILIO|KEAP|DIGITALOCEAN|FACEBK|META ?ADS|SKOOL|ELEVENLABS|CHATCUT|DOCUSIGN|SIMVOLY|CAPCUT|TURBODIAL|ALIBABA|QUICKBOOKS|INTUIT|GODADDY|SHOPIFY/, 'Suscripciones', 'negocio']
+];
+
+const PATRON_PAGO = /PAYMENT|THANK YOU|PAGO|AUTOPAY|AUTO ?PAY|ONLINE PMT|E-?PAYMENT|CREDIT CRD|CRD EPAY|CARD PMT/i;
+const PATRON_INGRESO = /PAYROLL|DIRECT DEP|DEPOSIT|DEP\b|ZELLE FROM|TRANSFER FROM|INTEREST|REFUND|REEMBOLSO|STRIPE|SQUARE INC|PAYPAL TRANSFER/i;
+
+/* Lee CSV (comas, comillas dobles) */
+function leerCSV(texto) {
+  const filas = []; let fila = [], campo = '', q = false;
+  const t = String(texto).replace(/^﻿/, '');
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i];
+    if (q) {
+      if (c === '"') { if (t[i + 1] === '"') { campo += '"'; i++; } else q = false; } else campo += c;
+    } else if (c === '"') q = true;
+    else if (c === ',') { fila.push(campo); campo = ''; }
+    else if (c === '\n' || c === '\r') {
+      if (c === '\r' && t[i + 1] === '\n') i++;
+      fila.push(campo); filas.push(fila); fila = []; campo = '';
+    } else campo += c;
+  }
+  if (campo || fila.length) { fila.push(campo); filas.push(fila); }
+  return filas.filter(f => f.some(x => String(x).trim()));
+}
+
+function fechaCSV(t) {
+  t = String(t).trim();
+  let m = t.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return m[1] + '-' + m[2] + '-' + m[3];
+  m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+  if (m) { let a = Number(m[3]); if (a < 100) a += 2000; return a + '-' + String(m[1]).padStart(2, '0') + '-' + String(m[2]).padStart(2, '0'); }
+  return '';
+}
+const montoCSV = t => { const s = String(t).trim(); const n = Math.abs(num(s)); return (/^\(|^-|-\$|\$-|\)$/.test(s) ? -1 : 1) * n; };
+
+/* Detecta columnas por nombre (o el formato sin encabezado de Wells Fargo) */
+function interpretarCSV(filas) {
+  const enc = filas[0].map(x => String(x).toLowerCase().trim());
+  const tieneEnc = enc.some(x => /date|fecha|description|descrip|amount|monto|payee|debit|credit/.test(x));
+  let iF, iD, iM, iDeb, iCre, datos;
+  if (tieneEnc) {
+    const busca = (...res) => { for (const re of res) { const i = enc.findIndex(x => re.test(x)); if (i >= 0) return i; } return -1; };
+    iF = busca(/^trans(action)?\.? ?date/, /^date$/, /fecha/, /posted date|post date/, /date/);
+    iD = busca(/^description$/, /descrip/, /payee|merchant|name/, /memo/);
+    iM = busca(/^amount$/, /amount|monto|importe/);
+    iDeb = busca(/^debit/, /cargo/);
+    iCre = busca(/^credit$/, /^credit/, /abono/);
+    datos = filas.slice(1);
+  } else {
+    /* Wells Fargo: "fecha","monto","*","","descripción" */
+    iF = 0; iM = 1; iD = filas[0].length - 1; iDeb = iCre = -1; datos = filas;
+  }
+  if (iF < 0 || iD < 0 || (iM < 0 && iDeb < 0)) return null;
+
+  let filasMov = datos.map(f => {
+    const fecha = fechaCSV(f[iF]);
+    const desc = String(f[iD] || '').replace(/\s+/g, ' ').trim();
+    let monto;
+    if (iM >= 0 && String(f[iM] || '').trim()) monto = montoCSV(f[iM]);
+    else monto = (iDeb >= 0 && String(f[iDeb] || '').trim()) ? -Math.abs(num(f[iDeb])) : Math.abs(num(f[iCre] || 0));
+    return { fecha, desc, monto };
+  }).filter(x => x.fecha && x.desc && x.monto);
+
+  /* ¿Los gastos vienen positivos o negativos? Los pagos/depósitos indican el signo contrario */
+  let signoGasto = -1;
+  if (iM >= 0) {
+    /* Depósitos y nómina siempre son entradas. Los "PAYMENT" son entradas en tarjetas,
+       pero salidas en cuentas de banco: por eso los depósitos tienen prioridad. */
+    const depositos = filasMov.filter(x => PATRON_INGRESO.test(x.desc));
+    const pagos = filasMov.filter(x => PATRON_PAGO.test(x.desc));
+    if (depositos.length) signoGasto = suma(depositos, x => Math.sign(x.monto)) > 0 ? -1 : 1;
+    else if (pagos.length) signoGasto = suma(pagos, x => Math.sign(x.monto)) > 0 ? -1 : 1;
+    else signoGasto = filasMov.filter(x => x.monto < 0).length >= filasMov.length / 2 ? -1 : 1;
+  }
+  return { filas: filasMov, signoGasto };
+}
+
+const claveComercio = d => String(d).toUpperCase().replace(/[^A-Z&\s]/g, ' ').split(/\s+/).filter(w => w.length >= 3).slice(0, 2).join(' ');
+
+function categorizar(desc, ambitoBase) {
+  const d = String(desc).toUpperCase();
+  for (const r of S.reglas || []) if (r.texto && d.includes(r.texto)) return { cat: r.cat, ambito: r.ambito || ambitoBase };
+  for (const [re, cat, amb] of REGLAS_BASE) if (re.test(d)) return { cat, ambito: amb && conNegocio() ? amb : ambitoBase };
+  return { cat: 'Otros', ambito: ambitoBase };
+}
+
+let importacion = null;
+
+ACC.importar = () => {
+  const fuentes = [
+    ...S.deudas.map(d => ['d:' + d.id, '💳 ' + d.nombre + (d.ultimos4 ? ' ••' + d.ultimos4 : '')]),
+    ...S.cuentas.map(c => ['c:' + c.id, '🏦 ' + etiquetaCuenta(c)]),
+    ['', 'Otra / no está en la app']
+  ];
+  formulario({
+    titulo: '📥 Importar movimientos',
+    ayuda: 'Descarga de tu banco la actividad en formato CSV (en la web: Statements / Activity → Download → CSV). La app lee fecha, comercio y monto, y los clasifica sola.',
+    campos: [
+      { n: 'fuente', t: 'select', l: '¿De qué tarjeta o cuenta es el archivo?', ops: fuentes },
+      ...(S.eventos && S.eventos.length ? [{ n: 'evento', t: 'select', l: '¿Son de un evento? (opcional)', ops: [['', 'No'], ...S.eventos.filter(e => !e.cerrado).map(e => [e.id, '🎪 ' + e.nombre])] }] : [])
+    ],
+    valores: {},
+    texto: 'Continuar',
+    extra: `<div class="campo"><button type="button" class="btn ancho" id="btnCSV">📄 Elegir archivo CSV</button><input type="file" id="inputCSV" hidden>
+      <p class="ayuda" id="estadoCSV">Funciona con Amex, Chase, Bank of America, Wells Fargo, Capital One y Discover.</p></div>`,
+    alAbrir: form => {
+      $('#btnCSV').addEventListener('click', () => $('#inputCSV').click());
+      $('#inputCSV').addEventListener('change', async e => {
+        const archivo = e.target.files[0];
+        if (!archivo) return;
+        const r = interpretarCSV(leerCSV(await archivo.text()));
+        if (!r || !r.filas.length) { $('#estadoCSV').textContent = 'No reconocí ese archivo. Asegúrate de que sea CSV con fecha, descripción y monto.'; importacion = null; return; }
+        importacion = { ...r, archivo: archivo.name };
+        $('#estadoCSV').innerHTML = `✅ <b>${r.filas.length} movimientos</b> en ${esc(archivo.name)}. Toca Continuar para revisarlos.`;
+      });
+    },
+    guardar: v => { if (!importacion) { aviso('Primero elige el archivo CSV'); return; } importacion.fuente = v.fuente; importacion.evento = v.evento || ''; setTimeout(revisarImportacion, 50); }
+  });
+};
+
+function revisarImportacion() {
+  const imp = importacion;
+  if (!imp) return;
+  const [tipoF, idF] = (imp.fuente || ':').split(':');
+  const fuente = tipoF === 'd' ? S.deudas.find(d => d.id === idF) : tipoF === 'c' ? S.cuentas.find(c => c.id === idF) : null;
+  const ambitoBase = fuente ? ambitoDe(fuente) : ambitoPorDefecto();
+  const esTarjeta = tipoF === 'd';
+  const existentes = new Set(S.mov.map(m => m.ref).filter(Boolean));
+
+  imp.items = imp.filas.map((x, i) => {
+    const gasto = Math.sign(x.monto) === imp.signoGasto;
+    const ref = x.fecha + '|' + Math.abs(x.monto).toFixed(2) + '|' + x.desc.slice(0, 24).toUpperCase();
+    let tipo = gasto ? 'gasto' : 'ingreso', motivo = '';
+    if (PATRON_PAGO.test(x.desc) && (esTarjeta ? !gasto : gasto)) { tipo = 'omitir'; motivo = esTarjeta ? 'pago a la tarjeta' : 'pago de tarjeta (ya cuenta en Deudas)'; }
+    else if (esTarjeta && !gasto) { tipo = 'omitir'; motivo = 'devolución o crédito'; }
+    if (existentes.has(ref)) { tipo = 'omitir'; motivo = 'ya importado'; }
+    const c = tipo === 'ingreso' ? { cat: /PAYROLL|DIRECT DEP/i.test(x.desc) ? 'Salario' : 'Otros', ambito: ambitoBase } : categorizar(x.desc, ambitoBase);
+    return { i, ...x, monto: Math.abs(x.monto), tipo, motivo, ref, cat: c.cat, ambito: c.ambito, catAuto: c.cat, ambAuto: c.ambito };
+  });
+
+  const validos = imp.items.filter(x => x.tipo !== 'omitir');
+  const gastos = validos.filter(x => x.tipo === 'gasto');
+  const opsCat = t => Object.keys(t === 'gasto' ? CAT_GASTO : CAT_INGRESO);
+  hoja(`${cabecera('Revisa antes de importar')}
+    <p class="ayuda"><b>${validos.length}</b> por importar (${gastos.length} gastos · ${dinero(suma(gastos, x => x.monto))}) · ${imp.items.length - validos.length} omitidos.
+      Cambia la categoría si hace falta: la app <b>aprende</b> y la próxima vez lo clasifica sola.</p>
+    <ul class="lista importar">${imp.items.map(x => x.tipo === 'omitir' ? `
+      <li class="omitido"><span class="txt"><b>${esc(x.desc)}</b><span>${esc(fechaCorta(x.fecha))} · ${esc(x.motivo)}</span></span><span class="monto muted">${dinero(x.monto)}</span></li>` : `
+      <li data-i="${x.i}">
+        <span class="txt"><b>${esc(x.desc)}</b><span>${esc(fechaCorta(x.fecha))}${x.tipo === 'ingreso' ? ' · ingreso' : ''}</span>
+          <span class="selects">
+            <select data-campo="cat">${opsCat(x.tipo).map(c => `<option value="${esc(c)}" ${c === x.cat ? 'selected' : ''}>${esc((x.tipo === 'gasto' ? CAT_GASTO[c] : CAT_INGRESO[c]) + ' ' + nombreCat(c))}</option>`).join('')}</select>
+            ${conNegocio() ? `<select data-campo="ambito"><option value="personal" ${x.ambito === 'personal' ? 'selected' : ''}>🏠 Casa</option><option value="negocio" ${x.ambito === 'negocio' ? 'selected' : ''}>🏢 Negocio</option></select>` : ''}
+          </span></span>
+        <span class="monto ${x.tipo === 'ingreso' ? 'verde' : ''}">${x.tipo === 'ingreso' ? '+' : '-'}${dinero(x.monto)}</span>
+      </li>`).join('')}</ul>
+    <div class="botones"><button class="btn principal" data-a="confirmarImportacion">Importar ${validos.length} movimientos</button></div>`);
+}
+
+ACC.confirmarImportacion = () => {
+  const imp = importacion;
+  if (!imp || !imp.items) return;
+  const [tipoF, idF] = (imp.fuente || ':').split(':');
+  const fuente = tipoF === 'd' ? S.deudas.find(d => d.id === idF) : tipoF === 'c' ? S.cuentas.find(c => c.id === idF) : null;
+  const ambFuente = fuente ? ambitoDe(fuente) : 'personal';
+  document.querySelectorAll('.importar li[data-i]').forEach(li => {
+    const x = imp.items[Number(li.dataset.i)];
+    li.querySelectorAll('select').forEach(s => { x[s.dataset.campo] = s.value; });
+  });
+  S.reglas = S.reglas || [];
+  let nuevos = 0, aprendidas = 0;
+  imp.items.filter(x => x.tipo !== 'omitir').forEach(x => {
+    S.mov.push({
+      id: uid(), tipo: x.tipo, monto: r2(x.monto), cat: x.cat, nota: x.desc.slice(0, 60), fecha: x.fecha,
+      fuga: false, cuenta: '', ambito: x.ambito, ref: x.ref,
+      pago: tipoF === 'd' ? 'credito' : tipoF === 'c' ? 'debito' : undefined,
+      origen: x.ambito === 'negocio' ? (ambFuente === 'negocio' ? 'negocio' : 'casa') : undefined,
+      evento: imp.evento || undefined,
+      importado: imp.archivo
+    });
+    nuevos++;
+    if (x.tipo === 'gasto' && (x.cat !== x.catAuto || x.ambito !== x.ambAuto)) {
+      const texto = claveComercio(x.desc);
+      if (texto && !S.reglas.some(r => r.texto === texto)) { S.reglas.push({ texto, cat: x.cat, ambito: x.ambito }); aprendidas++; }
+    }
+  });
+  importacion = null;
+  guardar(); cerrarHoja(); pintar();
+  aviso(`✅ ${nuevos} movimientos importados${aprendidas ? ' · ' + aprendidas + ' reglas aprendidas' : ''}`);
+};
+
+ACC.reglas = () => {
+  const r = S.reglas || [];
+  hoja(`${cabecera('Reglas de categorías')}
+    <p class="ayuda">La app las aprende cuando corriges una categoría al importar. Si el comercio contiene el texto, se clasifica así.</p>
+    ${r.length ? `<ul class="lista">${r.map((x, i) => `<li><span class="punto">${CAT_GASTO[x.cat] || '📦'}</span>
+      <span class="txt"><b>${esc(x.texto)}</b><span>→ ${esc(nombreCat(x.cat))}${x.ambito === 'negocio' ? ' · 🏢 negocio' : ''}</span></span>
+      <button class="btn chico peligro" data-a="quitarRegla" data-id="${i}">Quitar</button></li>`).join('')}</ul>`
+      : '<div class="vacio"><span class="emo">🧠</span>Todavía no hay reglas. Se crean solas al importar.</div>'}`);
+};
+ACC.quitarRegla = i => { (S.reglas || []).splice(Number(i), 1); guardar(); ACC.reglas(); };
+
+
+/************************************************************
+ * NEGOCIO ↔ CASA: LO QUE EL NEGOCIO LE DEBE A TU CASA
+ * Suma los gastos del negocio pagados con dinero o tarjetas
+ * personales y resta lo que el negocio te reembolsa.
+ ************************************************************/
+
+function cuentaNegocioCasa() {
+  if (S.perfil.negocioDebeInicial === undefined || S.perfil.negocioDebeInicial === null) {
+    S.perfil.negocioDebeInicial = r2(deNegocioTotal());
+    S.perfil.negocioDebeDesde = hoy();
+  }
+  const inicial = S.perfil.negocioDebeInicial || 0;
+  const gastos = S.mov.filter(m => m.tipo === 'gasto' && ambitoDe(m) === 'negocio' && m.origen === 'casa');
+  const movs = S.reembolsos || [];
+  const pagado = suma(gastos, m => m.monto);
+  const reembolsos = suma(movs.filter(x => x.tipo === 'reembolso'), x => x.monto);
+  const prestamos = suma(movs.filter(x => x.tipo === 'prestamo'), x => x.monto);
+  return { inicial, pagado, reembolsos, prestamos, saldo: r2(inicial + pagado + prestamos - reembolsos), gastos, movs };
+}
+
+function tarjetaNegocioCasa() {
+  if (!conNegocio()) return '';
+  const c = cuentaNegocioCasa();
+  const neg = esc(nombreNegocio());
+  const ultimos = [
+    ...c.gastos.map(m => ({ fecha: m.fecha, txt: m.nota || nombreCat(m.cat), monto: m.monto, signo: '+' })),
+    ...c.movs.map(x => ({ fecha: x.fecha, txt: x.tipo === 'reembolso' ? 'Reembolso del negocio' : 'Préstamo de la casa al negocio', monto: x.monto, signo: x.tipo === 'reembolso' ? '-' : '+', id: x.id }))
+  ].sort((a, b) => b.fecha.localeCompare(a.fecha)).slice(0, 6);
+  return `<div class="seccion"><h2>Negocio ↔ Casa</h2></div>
+  <div class="card">
+    <span class="muted chico">${neg} le debe a tu casa</span>
+    <p class="grande ${c.saldo > 0 ? 'rojo' : 'verde'}">${dinero(c.saldo)}</p>
+    <div class="cuatro" style="margin-top:6px">
+      <div class="dato"><span>Saldo inicial</span><b>${dinero(c.inicial)}</b></div>
+      <div class="dato"><span>Gastos del negocio pagados por la casa</span><b>+${dinero(c.pagado)}</b></div>
+      <div class="dato"><span>Préstamos al negocio</span><b>+${dinero(c.prestamos)}</b></div>
+      <div class="dato"><span>Reembolsos recibidos</span><b class="verde">-${dinero(c.reembolsos)}</b></div>
+    </div>
+    ${ultimos.length ? `<ul class="lista" style="margin-top:10px">${ultimos.map(u => `<li><span class="txt"><b>${esc(u.txt)}</b><span>${esc(fechaCorta(u.fecha))}</span></span>
+      <span class="monto ${u.signo === '-' ? 'verde' : ''}">${u.signo}${dinero(u.monto)}</span>${u.id ? `<button class="btn chico" data-a="borrarReembolso" data-id="${u.id}">✕</button>` : ''}</li>`).join('')}</ul>` : ''}
+    <p class="ayuda">${c.saldo > 0 ? `Cada reembolso que te haga ${neg}, úsalo para bajar la tarjeta personal de interés más alto. Y desde hoy: gastos del negocio con tarjetas del negocio.` : 'Tu casa y tu negocio están a mano. Mantenlo así: cada gasto en su lado.'}</p>
+    <div class="botones">
+      <button class="btn chico principal" data-a="nuevoReembolso" data-id="reembolso">+ Reembolso del negocio</button>
+      <button class="btn chico" data-a="nuevoReembolso" data-id="prestamo">+ Préstamo al negocio</button>
+      <button class="btn chico" data-a="ajustarInicialNegocio">Ajustar saldo inicial</button>
+    </div>
+  </div>`;
+}
+
+ACC.nuevoReembolso = tipo => formulario({
+  titulo: tipo === 'prestamo' ? 'Préstamo de la casa al negocio' : 'Reembolso del negocio a la casa',
+  ayuda: tipo === 'prestamo' ? 'Dinero personal que pusiste en el negocio. Aumenta lo que el negocio te debe.' : 'Dinero que el negocio te devolvió por gastos que pagaste con lo personal. Baja lo que te debe.',
+  campos: [
+    { n: 'monto', t: 'dinero', l: 'Monto', req: true },
+    { n: 'fecha', t: 'fecha', l: 'Fecha' },
+    { n: 'nota', t: 'texto', l: 'Nota (opcional)', ph: 'Ej. Transferencia de la cuenta de la LLC' }
+  ],
+  valores: { fecha: hoy() },
+  guardar: v => { S.reembolsos = S.reembolsos || []; S.reembolsos.push({ id: uid(), tipo, ...v, fecha: v.fecha || hoy() }); aviso('Registrado'); }
+});
+ACC.borrarReembolso = id => { S.reembolsos = (S.reembolsos || []).filter(x => x.id !== id); guardar(); pintar(); };
+ACC.ajustarInicialNegocio = () => formulario({
+  titulo: 'Saldo inicial negocio → casa',
+  ayuda: 'Lo que el negocio ya te debía cuando empezaste a llevar esta cuenta (por ejemplo, la parte de tus tarjetas personales que son gastos del negocio). Se calculó con lo que marcaste en tus deudas.',
+  campos: [{ n: 'monto', t: 'dinero', l: 'Saldo inicial' }],
+  valores: { monto: S.perfil.negocioDebeInicial || '' },
+  guardar: v => { S.perfil.negocioDebeInicial = v.monto; }
+});
+
+
+/************************************************************
+ * EVENTOS: PRESUPUESTO Y P&L DE CADA EVENTO
+ * Regla de oro: no se compra con tarjeta lo que no se ha cobrado.
+ ************************************************************/
+
+function cifrasEvento(e) {
+  const movs = S.mov.filter(m => m.evento === e.id);
+  const gastado = r2(suma(movs.filter(m => m.tipo === 'gasto'), m => m.monto));
+  const cobrado = r2(suma(movs.filter(m => m.tipo === 'ingreso'), m => m.monto));
+  return { movs, gastado, cobrado, utilidad: r2(cobrado - gastado), financiado: r2(Math.max(0, gastado - cobrado)) };
+}
+
+function tarjetaEventos() {
+  if (!conNegocio()) return '';
+  const lista = (S.eventos || []).slice().sort((a, b) => (a.cerrado - b.cerrado) || String(b.fecha).localeCompare(String(a.fecha)));
+  let h = `<div class="seccion"><h2>Eventos</h2><button class="icono" data-a="nuevoEvento" aria-label="Nuevo evento"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button></div>`;
+  if (!lista.length) {
+    return h + `<div class="card"><p class="chico muted" style="margin:0">Crea cada evento (ej. Puerto Rico, Columbus) con su presupuesto y la meta de ventas. Asigna los gastos y cobros al evento y verás si deja ganancia, y si lo estás financiando con tarjetas.</p>
+      <div class="botones"><button class="btn chico principal" data-a="nuevoEvento">+ Nuevo evento</button></div></div>`;
+  }
+  return h + lista.map(e => {
+    const c = cifrasEvento(e);
+    const pp = e.presupuesto ? pct(c.gastado, e.presupuesto) : 0;
+    return `<div class="card ${c.financiado > 0 && !e.cerrado ? 'semaforo red' : ''}">
+      <div class="fila"><h2 style="margin:0">🎪 ${esc(e.nombre)} <small>${e.fecha ? '· ' + esc(fechaCorta(e.fecha)) : ''}${e.cerrado ? ' · cerrado' : ''}</small></h2>
+        <button class="btn chico" data-a="editarEvento" data-id="${e.id}">✎</button></div>
+      <div class="cuatro">
+        <div class="dato"><span>Cobrado</span><b class="verde">${dinero(c.cobrado)}</b>${e.meta ? `<span>meta ${dinero(e.meta)}</span>` : ''}</div>
+        <div class="dato"><span>Gastado</span><b>${dinero(c.gastado)}</b>${e.presupuesto ? `<span>de ${dinero(e.presupuesto)}</span>` : ''}</div>
+        <div class="dato"><span>${c.utilidad >= 0 ? 'Ganancia' : 'Pérdida'}</span><b class="${c.utilidad >= 0 ? 'verde' : 'rojo'}">${dinero(c.utilidad)}</b></div>
+        <div class="dato"><span>Financiado con deuda</span><b class="${c.financiado > 0 ? 'rojo' : ''}">${dinero(c.financiado)}</b></div>
+      </div>
+      ${e.presupuesto ? `<div class="barra ${pp >= 100 ? 'roja' : 'azul'}"><i style="width:${pp}%"></i></div>` : ''}
+      ${c.financiado > 0 && !e.cerrado ? `<p class="chico rojo" style="margin:8px 0 0">⚠ Has gastado ${dinero(c.financiado)} más de lo cobrado: ese dinero sale de tarjetas o de tu casa. No compres más hasta cobrar.</p>` : ''}
+    </div>`;
+  }).join('');
+}
+
+ACC.nuevoEvento = () => formEvento();
+ACC.editarEvento = id => formEvento((S.eventos || []).find(e => e.id === id));
+
+function formEvento(e) {
+  formulario({
+    titulo: e ? 'Editar evento' : 'Nuevo evento',
+    ayuda: 'Define el presupuesto ANTES de comprar. Asigna los gastos y cobros al evento al registrarlos o al importar.',
+    campos: [
+      { n: 'nombre', t: 'texto', l: 'Nombre', req: true, ph: 'Ej. Encuentro Puerto Rico 2027' },
+      { n: 'fecha', t: 'fechaFutura', l: 'Fecha del evento' },
+      { n: 'presupuesto', t: 'dinero', l: 'Presupuesto de gastos (vuelos, hoteles, local…)' },
+      { n: 'meta', t: 'dinero', l: 'Meta de ventas / cobros' },
+      ...(e ? [{ n: 'cerrado', t: 'check', l: 'Evento cerrado' }] : [])
+    ],
+    valores: e || {},
+    borrar: e ? () => { S.eventos = S.eventos.filter(x => x.id !== e.id); S.mov.forEach(m => { if (m.evento === e.id) delete m.evento; }); } : null,
+    guardar: v => {
+      S.eventos = S.eventos || [];
+      if (e) Object.assign(e, v); else S.eventos.push({ id: uid(), cerrado: false, ...v });
+    }
+  });
+}
+
+/************************************************************
  * PERSONAL | NEGOCIO | TODO
  ************************************************************/
 
@@ -2025,7 +2463,7 @@ function vistaDeudas() {
     </div>`;
   }).join('');
 
-  h += `<button class="btn ancho" data-a="nuevaDeuda">+ Agregar otra deuda</button>`;
+  h += `<div class="botones"><button class="btn" data-a="nuevaDeuda">+ Agregar deuda</button><button class="btn" data-a="calendario">📅 Pagos a mi Calendario</button></div>`;
   h += planSalida();
   return h;
 }
@@ -2436,6 +2874,7 @@ function abrirRegistrar() {
       <button class="opcion" data-a="regPago"><span class="emo">💳</span><b>Pago a deuda</b><span>Tarjeta o préstamo</span></button>
       <button class="opcion" data-a="regAporte"><span class="emo">🏦</span><b>Ahorro</b><span>Aporte a una meta</span></button>
       <button class="opcion" data-a="subirEstado"><span class="emo">📄</span><b>Estado de cuenta</b><span>Actualiza el saldo del banco</span></button>
+      <button class="opcion" data-a="importar"><span class="emo">📥</span><b>Importar del banco</b><span>Movimientos en CSV</span></button>
       ${conNegocio() ? '<button class="opcion" data-a="subirPyG"><span class="emo">📊</span><b>P&L</b><span>Resultados del negocio</span></button>' : ''}
     </div>`);
 }
@@ -2459,7 +2898,9 @@ function formMov(tipo, m) {
     { n: 'nota', t: 'texto', l: 'Descripción (opcional)', ph: gasto ? 'Ej. Supermercado' : 'Ej. Quincena' },
     { n: 'fecha', t: 'fecha', l: 'Fecha' },
     ...campoCuenta(gasto ? '¿De dónde salió?' : '¿A dónde entró?'),
-    ...campoAmbito()
+    ...campoAmbito(),
+    ...(conNegocio() && gasto ? [{ n: 'origen', t: 'select', l: 'Si es del negocio: ¿con qué se pagó?', ops: [['negocio', '🏢 Dinero o tarjeta del negocio'], ['casa', '🏠 Dinero o tarjeta personal (el negocio te lo debe)']] }] : []),
+    ...((S.eventos || []).some(e => !e.cerrado || (m && m.evento === e.id)) ? [{ n: 'evento', t: 'select', l: '¿Es de un evento?', ops: [['', 'No'], ...S.eventos.filter(e => !e.cerrado || (m && m.evento === e.id)).map(e => [e.id, '🎪 ' + e.nombre])] }] : [])
   ];
   if (gasto) campos.splice(2, 0, { n: 'pago', t: 'select', l: '¿Cómo pagaste?', ops: Object.entries(FORMAS_PAGO) });
   if (gasto) campos.push({ n: 'fuga', t: 'check', l: 'Es una fuga: pude no haberlo gastado' });
@@ -2468,7 +2909,7 @@ function formMov(tipo, m) {
   formulario({
     titulo: (m ? 'Editar ' : 'Nuevo ') + tipo,
     campos,
-    valores: m || { fecha: hoy(), cuenta: cuentaPorDefecto(), ambito: ambitoPorDefecto(), pago: S.perfil.ultimoPago || 'credito' },
+    valores: m || { fecha: hoy(), cuenta: cuentaPorDefecto(), ambito: ambitoPorDefecto(), pago: S.perfil.ultimoPago || 'credito', origen: 'negocio' },
     extra: gasto ? `
       <div class="campo"><span>Foto de la factura (opcional)</span>
         <div id="fotoZona"></div>
@@ -2698,7 +3139,12 @@ const ICO = {
   compartir: '<path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/><path d="M16 6l-4-4-4 4M12 2v14"/>',
   actualizar: '<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>',
   escudo: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
-  borrar: '<path d="M3 6h18M8 6V4h8v2M6 6l1 15h10l1-15"/>'
+  borrar: '<path d="M3 6h18M8 6V4h8v2M6 6l1 15h10l1-15"/>',
+  calendario: '<rect x="3" y="4" width="18" height="18" rx="3"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+  importar: '<path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>',
+  reglas: '<path d="M4 6h16M4 12h10M4 18h6"/>',
+  evento: '<path d="M4 21V4l8 3 8-3v13l-8 3-8-3"/>',
+  puente: '<path d="M3 12h18M7 8l-4 4 4 4M17 8l4 4-4 4"/>'
 };
 const tile = (ic, color = '') => `<span class="tile ${color}"><svg viewBox="0 0 24 24">${ICO[ic]}</svg></span>`;
 const filaAjuste = ({ a, id, ic, color, titulo, sub, attrs = '' }) => `
@@ -2734,11 +3180,16 @@ function abrirAjustes() {
       ${filaAjuste({ a: 'categorias', ic: 'pyg', titulo: 'Categorías de gastos', sub: Object.keys(S.catsPropias || {}).length ? Object.keys(S.catsPropias).length + ' propias · agrega productos o servicios' : 'Agrega productos o servicios' })}
       ${filaAjuste({ a: 'editarPresupuesto', ic: 'casa', titulo: 'Presupuesto de la casa', sub: presupuestoTotal() ? dinero(presupuestoTotal()) + ' al mes' : 'Sin definir' })}
       ${filaAjuste({ a: 'subirEstado', ic: 'banco', titulo: 'Estados de cuenta', sub: S.cuentas.length ? S.cuentas.length + (S.cuentas.length === 1 ? ' cuenta' : ' cuentas') + ' · ' + dinero(suma(S.cuentas, c => c.saldo)) : 'Actualiza el saldo de tus bancos' })}
+      ${conNegocio() ? filaAjuste({ a: 'verEventos', ic: 'evento', titulo: 'Eventos', sub: (S.eventos || []).length ? S.eventos.length + ' evento(s)' : 'Presupuesto y P&L de cada evento' }) : ''}
+      ${conNegocio() ? filaAjuste({ a: 'verNegocioCasa', ic: 'puente', titulo: 'Negocio ↔ Casa', sub: 'Lo que el negocio le debe a tu casa: ' + dinero(cuentaNegocioCasa().saldo) }) : ''}
       ${conNegocio() ? filaAjuste({ a: 'subirPyG', ic: 'pyg', titulo: 'P&L del negocio', sub: S.pyg.length ? S.pyg.length + ' periodo(s) registrados' : 'Sube el estado de resultados' }) : ''}
     </div>
 
     <p class="grupo-titulo">Herramientas de datos</p>
     <div class="grupo">
+      ${filaAjuste({ a: 'importar', ic: 'importar', titulo: 'Importar movimientos (CSV)', sub: 'Amex, Chase, BofA, Wells Fargo, Capital One, Discover' })}
+      ${filaAjuste({ a: 'reglas', ic: 'reglas', titulo: 'Reglas de categorías', sub: (S.reglas || []).length ? S.reglas.length + ' aprendidas' : 'Se aprenden al importar' })}
+      ${filaAjuste({ a: 'calendario', ic: 'calendario', titulo: 'Pagos en mi Calendario', sub: 'Recordatorios en el iPhone, 3 días antes' })}
       ${filaAjuste({ a: 'respaldar', ic: 'bajar', color: 'verde', titulo: 'Guardar copia', sub: ultimo ? 'Última copia: ' + esc(fechaCorta(ultimo)) : 'Todavía no has guardado ninguna' })}
       ${filaAjuste({ a: 'restaurar', ic: 'subir', titulo: 'Recuperar copia', sub: 'Carga un archivo de respaldo (.json)' })}
       ${filaAjuste({ a: 'compartir', ic: 'compartir', titulo: 'Compartir la app', sub: 'Cada persona tiene sus propios datos' })}
@@ -3363,3 +3814,6 @@ if (navigator.storage && navigator.storage.persist) navigator.storage.persist().
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
+
+ACC.verEventos = () => hoja(cabecera('Eventos') + tarjetaEventos());
+ACC.verNegocioCasa = () => hoja(cabecera('Negocio ↔ Casa') + tarjetaNegocioCasa());
