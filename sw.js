@@ -1,6 +1,6 @@
 /* Permite abrir la app sin señal: primero intenta la red (siempre la versión más reciente) y, si falla, usa la copia guardada. */
 
-const CACHE = 'cff-10';
+const CACHE = 'cff-12';
 const ARCHIVOS = ['./', 'index.html', 'styles.css', 'app.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-180.png'];
 
 self.addEventListener('install', e => {
@@ -29,4 +29,10 @@ self.addEventListener('fetch', e => {
       })
       .catch(() => caches.match(e.request, { ignoreSearch: true }).then(r => r || caches.match('index.html')))
   );
+});
+
+/* Al tocar una notificación se abre la app */
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  e.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then(l => l.length ? l[0].focus() : clients.openWindow('./')));
 });
