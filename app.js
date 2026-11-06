@@ -8,7 +8,7 @@
  ************************************************************/
 
 /* Al publicar un cambio: subir este número y el de version.json (deben ser iguales) */
-const VERSION = '0.19.0';
+const VERSION = '0.19.1';
 const BETA = true; /* quitar en el lanzamiento oficial */
 
 const CLAVE = 'cff.v1';
@@ -786,9 +786,7 @@ function vistaInicio() {
     mensaje = 'Vas en positivo, pero ' + altas[0].nombre + ' está usada al ' + Math.round(utilizacion(altas[0])) + '%.';
   }
 
-  let h = tarjetaActualizar() + tarjetaInstalar() + tarjetaRespaldo() + selectorVista() + tarjetaRachas() + tarjetaRetoDiario() + tarjetaMensajeDia() + tarjetaCierre();
-
-  h += tarjetaConfigurar();
+  let h = tarjetaActualizar() + tarjetaInstalar() + tarjetaRespaldo() + selectorVista() + tarjetaRachas() + siguientePaso() + tarjetaMensajeDia();
 
   /* Disponible para gastar (siempre el mes en curso) */
   h += `<div class="seccion"><h2>Disponible para gastar</h2>
@@ -836,17 +834,7 @@ function vistaInicio() {
   if (esteMes && vistaElegida() === 'todo') h += tarjetaPanorama();
   if (esteMes && conNegocio() && vistaElegida() !== 'personal') h += tarjetaNegocioCasa();
 
-  if (!p.terminado) {
-    const hecho = S.retos[reto.n];
-    h += `
-    <div class="card reto ${hecho ? 'hecho' : 'actual'}">
-      <span class="num">Reto de la semana ${reto.n} · ${reto.etapa}</span>
-      <h3>${hecho ? '✅ ' : ''}${esc(reto.titulo)}</h3>
-      <p>${esc(reto.texto)}</p>
-      <div class="botones"><button class="btn chico ${hecho ? '' : 'principal'}" data-a="verRetos">${hecho ? 'Ver todos los retos' : 'Ir al reto'}</button></div>
-    </div>`;
-    h += tarjetaRetoMes(RETOS_MES[mesDelCiclo() - 1], true);
-  }
+  h += tarjetaMisRetos();
 
   if (esteMes) h += tarjetaFijos() + tarjetaDinero();
 
@@ -919,6 +907,14 @@ function tarjetaDisponible() {
   const gastadoCasa = suma(rA.lista.filter(x => x.k === 'mov' && x.tipo === 'gasto' && ambitoDe(x) === 'personal'), x => x.monto);
   const casaRestante = vistaElegida() !== 'negocio' ? Math.max(0, presupuestoTotal() - gastadoCasa) : 0;
 
+  if (!hayCuentas && !porEntrar && !rA.ingresos) {
+    const negocio = vistaElegida() === 'negocio';
+    return `<div class="card hero vacio-suave">
+      <p class="chico" style="margin:0 0 6px"><b>${negocio ? '🏢 Falta la cuenta del negocio' : '🏦 Falta tu dinero de hoy'}</b></p>
+      <p class="ayuda" style="margin:0 0 12px">${negocio ? 'Para saber cuánto puede gastar el negocio, agrega su cuenta de banco y lo que cobra cada mes.' : 'Agrega tus cuentas de banco y tus ingresos para saber cuánto puedes gastar sin quedarte corto.'}${porPagar + minimosPendientes() > 0 ? ' Este mes tiene <b>' + dinero(porPagar + minimosPendientes()) + '</b> en pagos por hacer.' : ''}</p>
+      <div class="botones"><button class="btn chico principal" data-a="nuevaCuenta">+ Agregar cuenta</button><button class="btn chico" data-a="nuevoFijoIngreso">+ Ingreso fijo</button></div>
+    </div>`;
+  }
   const base = hayCuentas ? dineroEnCuentas() : rA.queda;
   const proyectado = base + porEntrar;
   const gasto = porPagar + minimosPendientes() + casaRestante;
@@ -3250,7 +3246,7 @@ function vistaRetos() {
     <span class="chico muted">Un reto por semana. Los cumples tú; nadie los marca por ti.</span>
   </div>`;
 
-  h += tarjetaCheckin(p.semana);
+  /* El check-in ahora es el "Cierre de la semana" (arriba en Progreso) */
 
   let etapa = '';
   RETOS.forEach(r => {
@@ -4193,6 +4189,7 @@ const RETOS_MES = [
       const ini = S.ciclo && S.ciclo.cortes && S.ciclo.cortes[2] ? S.ciclo.cortes[2].deuda : null;
       if (!ini) return { val: 0, meta: 3, txt: 'Empieza en el mes 2 del ciclo' };
       const bajo = Math.max(0, (ini - fotoActual().deuda) / ini * 100);
+      if (bajo <= 0) return { val: 0, meta: 3, txt: 'Todavía sin avance. Registra tus pagos a deudas o actualiza el saldo de tus tarjetas para medirlo.' };
       return { val: r2(bajo), meta: 3, txt: 'Has bajado ' + bajo.toFixed(1) + '% de 3% (' + dinero(Math.max(0, ini - fotoActual().deuda)) + ')' };
     }
   },
@@ -4216,7 +4213,7 @@ function tarjetaRetoMes(r, compacta) {
   const p = r.progreso();
   const listo = p.val >= p.meta;
   let h = `<div class="card reto ${hecho ? 'hecho' : r.n === actual ? 'actual' : futuro ? 'futuro' : ''}">
-    <span class="num">Reto del mes ${r.n} de 3${r.n === actual && !hecho ? ' · este mes' : ''}</span>
+    <span class="num">Misión del mes ${r.n} de 3${r.n === actual && !hecho ? ' · este mes' : ''}</span>
     <h3>${hecho ? '🏆 ' : futuro ? '🔒 ' : '🎯 '}${esc(r.titulo)}</h3>
     <p>${esc(r.texto)}</p>`;
   if (!futuro && !hecho) {
@@ -4233,7 +4230,7 @@ function tarjetaRetoMes(r, compacta) {
 ACC.cumplirRetoMes = id => {
   S.retosMes = S.retosMes || {};
   S.retosMes[id] = hoy();
-  guardar(); pintar(); aviso('🏆 ¡Reto del mes logrado!');
+  guardar(); pintar(); aviso('🏆 ¡Misión del mes cumplida!');
 };
 
 
@@ -4345,7 +4342,7 @@ function vistaProgreso() {
       <div class="cifras">
         <div><span>Etapa</span><b>${esc(etapa.charAt(0) + etapa.slice(1).toLowerCase())}</b></div>
         <div><span>Retos de la semana</span><b>${semanas} de ${SEMANAS}</b></div>
-        <div><span>Retos del mes</span><b>${meses} de 3</b></div>
+        <div><span>Misiones del mes</span><b>${meses} de 3</b></div>
       </div>
       ${anillo(p.dia / DIAS_PROGRAMA, `<b>Día ${p.dia}</b><small>de ${DIAS_PROGRAMA}</small>`)}
     </div>
@@ -4356,7 +4353,7 @@ function vistaProgreso() {
   h += tarjetaRachas() + tarjetaRetoDiario(true) + tarjetaCierre(true) + tarjetaLogros();
   h += `<div class="seccion"><h2>Indicadores</h2></div>` + tarjetaIndicadores();
   h += `<div class="seccion"><h2>Desempeño</h2></div>` + tarjetasGraficas() + tarjetaComparar(true);
-  h += `<div class="seccion"><h2>Retos del mes</h2></div>` + RETOS_MES.map(r => tarjetaRetoMes(r)).join('');
+  h += `<div class="seccion"><h2>Misiones del ciclo</h2></div><p class="ayuda" style="margin:-4px 4px 12px">Una misión grande por cada mes de tus 90 días.</p>` + RETOS_MES.map(r => tarjetaRetoMes(r)).join('');
   h += `<div class="seccion"><h2>Retos de la semana</h2></div>` + vistaRetos();
   h += tarjetaCiclos();
   return h;
@@ -4611,15 +4608,16 @@ function tarjetaCierre(siempre) {
   return `<div class="card cierre">
     <h2>📝 Cierre de la semana ${semana} ${racha ? `<span class="etiqueta green">🔥 ${racha} ${racha === 1 ? 'semana' : 'semanas'}</span>` : ''}</h2>
     <p class="ayuda" style="margin-top:0">${hecho ? 'Semana cerrada. ¡Bien hecho!' : e && e.tarde ? 'Se te pasó ayer: ciérrala ahora, toma 5 minutos.' : 'Hoy toca: 5 minutos para revisar cómo te fue y corregir el rumbo.'}</p>
-    <div class="cuatro" style="margin-top:0">
+    ${t.ingresos || t.gastos || t.pagos || t.aportes ? `<div class="cuatro" style="margin-top:0">
       <div class="dato"><span>Entró</span><b class="verde">${dinero(t.ingresos)}</b></div>
       <div class="dato"><span>Salió</span><b>${dinero(t.gastos)}</b></div>
       <div class="dato"><span>A deudas</span><b>${dinero(t.pagos)}</b></div>
       <div class="dato"><span>Al ahorro</span><b>${dinero(t.aportes)}</b></div>
-    </div>
+    </div>` : '<p class="aviso-suave">📭 Esta semana no hay nada anotado. Abre tu banco y anota lo que gastaste: así el cierre te muestra la verdad.</p>'}
     <ul class="lista-cierre">${listaCierre(semana).map(([ok, txt]) => `<li class="${ok ? 'ok' : ''}"><span>${ok ? '✓' : '○'}</span>${esc(txt)}</li>`).join('')}</ul>
     <div class="botones">
       <button class="btn chico ${hecho ? '' : 'principal'}" data-a="checkin" data-id="${semana}">${hecho ? 'Ver mi cierre' : 'Cerrar mi semana'}</button>
+      ${hecho ? '<button class="btn chico" data-a="enviarAvance">📤 Enviar mi avance</button>' : ''}
       ${S.perfil.cierreCalendario ? '' : '<button class="btn chico" data-a="cierreCalendario">📅 Recordármelo cada semana</button>'}
     </div>
   </div>`;
@@ -4712,7 +4710,7 @@ function tarjetaRetoDiario(enProgreso) {
   if (!r) {
     if (!S.perfil.inicio || (!enProgreso && S.perfil.retoNo === m)) return '';
     return `<div class="card reto-diario invitacion">
-      <span class="num">🎯 Reto del mes · ${esc(nombreMes(m))}</span>
+      <span class="num">🌙 Reto de cada noche · ${esc(nombreMes(m))}</span>
       <h3>🌙 Cuentas claras cada noche</h3>
       <p>Cada noche, antes de dormir, anota en qué gastaste hoy. Toma 1 minuto. Quien lo hace 30 días deja de preguntarse "¿a dónde se fue mi dinero?".</p>
       <ul class="premios"><li>🔥 Racha de noches</li><li>🏅 Medallas a los 7 y 30 días</li><li>🔔 Recordatorio cada noche</li></ul>
@@ -4727,7 +4725,7 @@ function tarjetaRetoDiario(enProgreso) {
   if (!t && !enProgreso) return '';
   const gastosHoy = t ? S.mov.filter(x => x.tipo === 'gasto' && x.fecha === t.fecha) : [];
   return `<div class="card reto-diario ${t ? 'noche' : ''}">
-    <span class="num">🎯 Reto del mes · ${hechas} de ${Math.max(hechas, total)} noches ${racha ? `· 🔥 ${racha} seguidas` : ''}</span>
+    <span class="num">🌙 Reto de cada noche · ${hechas} de ${Math.max(hechas, total)} noches ${racha ? `· 🔥 ${racha} seguidas` : ''}</span>
     ${t ? `<h3>${t.ayer ? '☀️ ¿Qué gastaste ayer?' : '🌙 ¿Cuáles fueron tus gastos hoy?'}</h3>
       <p>${gastosHoy.length ? `Ya anotaste ${gastosHoy.length}: ${gastosHoy.slice(0, 4).map(g => esc(g.nota || g.cat) + ' ' + dinero(g.monto)).join(' · ')}${gastosHoy.length > 4 ? '…' : ''}. ¿Falta alguno?` : 'Repasa tu día: comida, gasolina, compras, antojos, pagos en efectivo.'}</p>
       <div class="botones">
@@ -4943,12 +4941,12 @@ const LOGROS = [
   { id: 'deuda-liquidada', e: '🎉', t: '¡Una menos!', d: 'Liquidaste una deuda completa.', si: () => S.deudas.some(d => (d.saldoInicial || 0) > 0 && d.saldo <= 0), pista: 'Termina de pagar una deuda.' },
   { id: 'cierre-1', e: '📝', t: 'Primer cierre', d: 'Cerraste tu primera semana.', si: () => Object.keys(S.checkins || {}).length > 0, pista: 'Haz tu cierre de la semana.' },
   { id: 'cierre-4', e: '🔥', t: 'Un mes cerrando', d: '4 semanas seguidas con cierre.', si: () => rachaCierre() >= 4, pista: 'Cierra 4 semanas seguidas.' },
-  { id: 'reto-aceptado', e: '🎯', t: 'Acepté el reto', d: 'Aceptaste el reto diario del mes.', si: () => Object.keys(retoDiario()).length > 0, pista: 'Acepta el reto "Cuentas claras cada noche".' },
+  { id: 'reto-aceptado', e: '🎯', t: 'Acepté el reto', d: 'Aceptaste el reto de cada noche.', si: () => Object.keys(retoDiario()).length > 0, pista: 'Acepta el reto de cada noche en Progreso.' },
   { id: 'noches-7', e: '🌙', t: '7 noches seguidas', d: 'Una semana anotando tus gastos cada noche.', si: () => rachaDiaria() >= 7, pista: 'Anota tus gastos 7 noches seguidas.' },
   { id: 'noches-30', e: '🌟', t: 'Mes de cuentas claras', d: '30 noches anotando tus gastos.', si: () => Object.values(retoDiario()).some(r => Object.keys(r.dias || {}).length >= 28), pista: 'Completa el reto diario de un mes.' },
   { id: 'dia-cero', e: '🧘', t: 'Día sin gastar', d: 'Tuviste un día sin gastar nada.', si: () => Object.values(retoDiario()).some(r => Object.values(r.dias || {}).includes('cero')), pista: 'Ten un día sin gastar y márcalo en el reto.' },
   { id: 'presupuesto', e: '🎯', t: 'Mes en presupuesto', d: 'Gastaste menos de lo planeado en un mes.', si: mesEnPresupuesto, pista: 'Termina un mes dentro de tu presupuesto.' },
-  { id: 'reto-mes', e: '🏅', t: 'Reto del ciclo', d: 'Cumpliste un reto de tu ciclo de 90 días.', si: () => Object.keys(S.retosMes || {}).length > 0, pista: 'Cumple un reto del mes en Progreso.' },
+  { id: 'reto-mes', e: '🏅', t: 'Misión cumplida', d: 'Cumpliste una misión de tu ciclo de 90 días.', si: () => Object.keys(S.retosMes || {}).length > 0, pista: 'Cumple la misión del mes en Progreso.' },
   { id: 'copia', e: '💾', t: 'Precavido', d: 'Guardaste una copia de tus datos.', si: () => !!S.perfil.ultimoRespaldo, pista: 'Guarda una copia en Ajustes.' },
   { id: 'ciclo-90', e: '👑', t: '90 días', d: 'Completaste un ciclo de 90 días.', si: () => programa().terminado || (S.ciclos || []).length > 0, pista: 'Completa tus 90 días.' }
 ];
@@ -5071,6 +5069,39 @@ pintar = (fn => function () {
   } catch (e) { /* los logros nunca afectan la app */ }
 })(pintar);
 
+
+/************************************************************
+ * CLARIDAD EN INICIO: un solo "siguiente paso" y los retos juntos
+ ************************************************************/
+
+/* De todo lo pendiente, Inicio muestra solo lo más urgente */
+function siguientePaso() {
+  if (turnoReto()) return tarjetaRetoDiario();
+  if (estadoCierre()) return tarjetaCierre();
+  const configurar = tarjetaConfigurar();
+  if (configurar) return configurar;
+  return tarjetaRetoDiario();
+}
+
+/* Los tres tipos de reto, explicados en una sola tarjeta */
+function tarjetaMisRetos() {
+  const p = programa();
+  if (!S.perfil.inicio || p.terminado) return '';
+  const semana = RETOS[p.semana - 1];
+  const mision = RETOS_MES[mesDelCiclo() - 1];
+  const pm = mision.progreso();
+  const rd = retoDelMes();
+  const fila = (ic, nombre, titulo, estado, ok) => `<li class="${ok ? 'ok' : ''}"><span class="ic">${ic}</span><span class="txt"><small>${nombre}</small><b>${esc(titulo)}</b><em>${esc(estado)}</em></span></li>`;
+  return `<div class="seccion"><h2>Mis retos</h2><button class="icono" data-a="verRetos" aria-label="Ver progreso"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></button></div>
+  <button class="card mis-retos" data-a="verRetos">
+    <ul>
+      ${fila('🌙', 'Cada noche', 'Cuentas claras', rd ? `${nochesDelMes()} noches este mes${rachaDiaria() ? ' · 🔥 ' + rachaDiaria() + ' seguidas' : ''}` : 'Sin aceptar · tócalo para empezar', rd && (rd.dias || {})[hoy()])}
+      ${fila('🗓️', 'Semana ' + semana.n + ' de 13', semana.titulo, S.retos[semana.n] ? '✓ Cumplido' : 'Pendiente esta semana', !!S.retos[semana.n])}
+      ${fila('🏅', 'Misión del mes ' + mision.n + ' de 3', mision.titulo, (S.retosMes || {})[mision.n] ? '✓ Cumplida' : pm.txt, !!(S.retosMes || {})[mision.n])}
+    </ul>
+    <span class="ver">Ver todo en Progreso ›</span>
+  </button>`;
+}
 
 /************************************************************
  * ARRANQUE
