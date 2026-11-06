@@ -8,7 +8,7 @@
  ************************************************************/
 
 /* Al publicar un cambio: subir este número y el de version.json (deben ser iguales) */
-const VERSION = '0.19.3';
+const VERSION = '0.19.4';
 const BETA = true; /* quitar en el lanzamiento oficial */
 
 const CLAVE = 'cff.v1';
@@ -3002,7 +3002,7 @@ function vistaDeudas() {
         ${d.limite > 0 ? `<br>Usada al ${Math.round(u)}% de ${dinero(d.limite)} <span class="etiqueta ${u >= 50 ? 'red' : u >= 30 ? '' : 'green'}">${u >= 50 ? 'alta' : u >= 30 ? 'cuidado' : 'bien'}</span>` : ''}
       </p>
       <div class="botones">
-        <button class="btn chico principal" data-a="pagar" data-id="${d.id}" ${d.saldo <= 0 ? 'disabled' : ''}>${d.saldo <= 0 ? 'Pagada 🎉' : 'Registrar pago'}</button>
+        ${d.saldo <= 0 ? '<span class="etiqueta green" style="align-self:center;font-size:14px;padding:8px 14px">Pagada 🎉</span>' : `<button class="btn chico principal" data-a="pagar" data-id="${d.id}">Registrar pago</button>`}
         <button class="btn chico" data-a="editarDeuda" data-id="${d.id}">Editar</button>
       </div>
     </div>`;
@@ -3283,7 +3283,7 @@ function vistaRetos() {
       }
       h += `<div class="botones">`;
       if (r.accion && !listo) h += `<button class="btn chico oscuro" data-a="accionReto" data-id="${r.n}">${esc(r.accion[0])}</button>`;
-      h += `<button class="btn chico principal" data-a="cumplirReto" data-id="${r.n}" ${listo ? '' : 'disabled'}>Lo cumplí</button></div>`;
+      h += `<button class="btn chico principal" data-a="cumplirReto" data-id="${r.n}" ${listo ? '' : `data-falta="${esc(r.accion ? 'Todavía falta: ' + r.accion[0].toLowerCase() + (meta > 1 ? ' (llevas ' + Math.min(val, meta) + ' de ' + meta + ')' : '') : 'Todavía no se cumple: llevas ' + Math.min(val, meta) + ' de ' + meta)}" style="opacity:.55"`}>Lo cumplí</button></div>`;
     }
     h += `</div>`;
   });
@@ -3389,7 +3389,7 @@ function fotoDia90() {
 }
 
 ACC.accionReto = id => RETOS[id - 1].accion[1]();
-ACC.cumplirReto = id => { S.retos[id] = hoy(); guardar(); pintar(); aviso('💪 ¡Reto cumplido!'); };
+ACC.cumplirReto = (id, b) => { if (b && b.dataset.falta) { aviso(b.dataset.falta); return; } S.retos[id] = hoy(); guardar(); pintar(); aviso('💪 ¡Reto cumplido!'); };
 ACC.desmarcarReto = id => { delete S.retos[id]; guardar(); pintar(); };
 
 function formRadiografia() {
@@ -3686,10 +3686,13 @@ function formulario({ titulo, ayuda, campos, valores = {}, guardar: alGuardar, b
         return;
       }
     }
+    const avisoAntes = $('#aviso').hidden ? null : $('#aviso').textContent;
     alGuardar(v);
     guardar();
     cerrarHoja();
     pintar();
+    /* Siempre confirmar que se guardó, si el formulario no dijo nada por su cuenta */
+    if (!sinCerrar && ($('#aviso').hidden || $('#aviso').textContent === avisoAntes)) aviso('Guardado ✓');
   });
 
   if (borrar) {
@@ -4224,7 +4227,7 @@ function tarjetaRetoMes(r, compacta) {
   if (!futuro && !hecho) {
     h += `<div class="barra"><i style="width:${pct(p.val, p.meta)}%"></i></div><span class="chico muted">${esc(p.txt)}</span>`;
     if (!compacta && p.pasos) h += `<ul class="pasos">${p.pasos.map(s => `<li class="${s[1] ? 'ok' : ''}">${s[1] ? '✓' : '○'} ${esc(s[0])}</li>`).join('')}</ul>`;
-    h += `<div class="botones"><button class="btn chico principal" data-a="cumplirRetoMes" data-id="${r.n}" ${listo ? '' : 'disabled'}>¡Lo logré!</button>
+    h += `<div class="botones"><button class="btn chico principal" data-a="cumplirRetoMes" data-id="${r.n}" ${listo ? '' : `data-falta="${esc(/^Todavía/.test(p.txt) ? p.txt : 'Todavía no: ' + p.txt)}" style="opacity:.55"`}>¡Lo logré!</button>
       ${compacta ? '<button class="btn chico" data-a="verRetos">Ver progreso</button>' : ''}</div>`;
   } else if (hecho) {
     h += `<p class="chico verde" style="margin-top:8px"><b>Logrado el ${esc(fechaCorta(hecho))}</b></p>`;
@@ -4232,7 +4235,8 @@ function tarjetaRetoMes(r, compacta) {
   return h + `</div>`;
 }
 
-ACC.cumplirRetoMes = id => {
+ACC.cumplirRetoMes = (id, b) => {
+  if (b && b.dataset.falta) { aviso(b.dataset.falta); return; }
   S.retosMes = S.retosMes || {};
   S.retosMes[id] = hoy();
   guardar(); pintar(); aviso('🏆 ¡Misión del mes cumplida!');
@@ -5056,7 +5060,10 @@ function tarjetaLogros() {
   </div>`;
 }
 
-ACC.verLogros = () => ir('retos');
+ACC.verLogros = () => {
+  if (vistaActual !== 'retos') ir('retos');
+  setTimeout(() => { const l = document.querySelector('#vista .logros'); if (l) window.scrollTo(0, l.getBoundingClientRect().top + window.scrollY - 70); }, 80);
+};
 ACC.verLogro = id => {
   const l = LOGROS.find(x => x.id === id);
   if (!l) return;
