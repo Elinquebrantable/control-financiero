@@ -73,6 +73,25 @@
 
 <div class="aviso" id="aviso" hidden></div>
 
+<script>
+/* Red de seguridad: si la app no termina de cargar, en vez de una pantalla vacía se ofrece reintentar.
+   Reintentar borra solo las copias de la app, nunca tus datos (esos viven aparte en el teléfono). */
+window.__cffErrores = [];
+addEventListener('error', function (e) { __cffErrores.push((e.message || 'error') + ' · ' + String(e.filename || '').split('/').pop() + ':' + (e.lineno || '')); });
+setTimeout(function () {
+  if (window.__cffListo) return;
+  var v = document.getElementById('vista');
+  if (!v) return;
+  v.innerHTML = '<div class="card" style="margin-top:12px"><h2>😕 La app no terminó de cargar</h2>' +
+    '<p class="ayuda">Tus datos están a salvo en este teléfono. Puede ser la señal. Toca Reintentar.</p>' +
+    '<button class="btn principal ancho" id="cffReintentar">Reintentar</button>' +
+    '<p class="ayuda" style="font-size:11px;opacity:.7;margin-top:12px">Detalle: ' + (__cffErrores.join(' | ') || 'sin error, tardó demasiado').replace(/</g, '&lt;') + '</p></div>';
+  document.getElementById('cffReintentar').onclick = function () {
+    var listo = function () { location.reload(); };
+    if (window.caches) caches.keys().then(function (k) { return Promise.all(k.map(function (x) { return caches.delete(x); })); }).then(listo, listo); else listo();
+  };
+}, 6000);
+</script>
 <script src="app.js"></script>
 </body>
 </html>

@@ -8,7 +8,7 @@
  ************************************************************/
 
 /* Al publicar un cambio: subir este número y el de version.json (deben ser iguales) */
-const VERSION = '0.19.1';
+const VERSION = '0.19.3';
 const BETA = true; /* quitar en el lanzamiento oficial */
 
 const CLAVE = 'cff.v1';
@@ -786,10 +786,10 @@ function vistaInicio() {
     mensaje = 'Vas en positivo, pero ' + altas[0].nombre + ' está usada al ' + Math.round(utilizacion(altas[0])) + '%.';
   }
 
-  let h = tarjetaActualizar() + tarjetaInstalar() + tarjetaRespaldo() + selectorVista() + tarjetaRachas() + siguientePaso() + tarjetaMensajeDia();
+  let h = tarjetaActualizar() + tarjetaInstalar() + tarjetaRespaldo() + selectorVista() + resumenVista() + tarjetaRachas() + siguientePaso() + tarjetaMensajeDia();
 
   /* Disponible para gastar (siempre el mes en curso) */
-  h += `<div class="seccion"><h2>Disponible para gastar</h2>
+  h += `<div class="seccion"><h2>Disponible para gastar${conNegocio() ? ' <small>· ' + esc(etiquetaVista()) + '</small>' : ''}</h2>
     <button class="icono" data-a="ir" data-id="ingresos" aria-label="Ver ingresos"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h18l-7 8v6l-4 2v-8z"/></svg></button>
   </div>` + tarjetaDisponible();
 
@@ -2840,7 +2840,12 @@ function selectorVista() {
   </div>`;
 }
 
-ACC.vista = id => { S.perfil.vista = id; guardar(); pintar(); };
+ACC.vista = id => {
+  S.perfil.vista = id;
+  guardar();
+  pintar();
+  aviso(({ personal: '🏠 Viendo solo tu casa', negocio: '🏢 Viendo solo ' + nombreNegocio(), todo: '🔭 Viendo casa y negocio juntos' })[id]);
+};
 
 /* Números de un ámbito, sin importar la vista elegida */
 function cifras(ambito) {
@@ -5063,7 +5068,12 @@ ACC.verLogro = id => {
 /* Se revisa después de cada pantalla pintada */
 pintar = (fn => function () {
   try { revisarHitosMetas(); revisarLogros(); } catch (e) { /* los logros nunca afectan la app */ }
-  fn();
+  try { fn(); } catch (err) {
+    /* Si una pantalla falla, se dice qué pasó en vez de quedar en blanco */
+    console.error(err);
+    const v = document.getElementById("vista");
+    if (v) v.innerHTML = `<div class="card semaforo red"><h2>😕 Esta pantalla tuvo un error</h2><p class="ayuda">Tus datos están a salvo. Toma una captura de este mensaje y envíala para arreglarlo.</p><div class="botones"><button class="btn chico principal" data-a="ir" data-id="inicio">Volver a Inicio</button></div><p class="ayuda" style="font-size:11px;opacity:.7">${esc(VERSION + " · " + vistaActual + " · " + (S.perfil.vista || "") + " · " + (err && err.message || err) + " · " + String(err && err.stack || "").split("\n").slice(0, 2).join(" "))}</p></div>`;
+  }
   try {
     if (colaFiesta.length && !enFiesta) { enFiesta = true; setTimeout(siguienteFiesta, 450); }
   } catch (e) { /* los logros nunca afectan la app */ }
@@ -5103,6 +5113,22 @@ function tarjetaMisRetos() {
   </button>`;
 }
 
+/* Al cambiar de vista, lo primero que se ve cambia: cuánto debe, cuánto paga y cuánto tiene esa parte */
+function resumenVista() {
+  if (!conNegocio()) return '';
+  const v = vistaElegida();
+  const activas = deudasV().filter(d => d.saldo > 0);
+  const titulo = { personal: '🏠 Tu casa', negocio: '🏢 ' + esc(nombreNegocio()), todo: '🔭 Casa + negocio' }[v];
+  return `<div class="card resumen-vista ${v}">
+    <p class="rv-titulo">${titulo} <small>${v === 'todo' ? 'todo junto' : 'solo esta parte'}</small></p>
+    <div class="rv-datos">
+      <div><span>Debes</span><b class="rojo">${dinero(suma(activas, d => d.saldo))}</b></div>
+      <div><span>Mínimos al mes</span><b>${dinero(suma(activas, d => d.minimo || 0))}</b></div>
+      <div><span>En cuentas</span><b class="verde">${dinero(suma(cuentasV(), c => c.saldo))}</b></div>
+    </div>
+  </div>`;
+}
+
 /************************************************************
  * ARRANQUE
  ************************************************************/
@@ -5112,6 +5138,7 @@ if (bloqueoActivo()) mostrarCandado();
 if (window.matchMedia) window.matchMedia('(prefers-color-scheme: light)').addEventListener?.('change', aplicarTema);
 try { registrarFoto(); guardar(); } catch (e) { /* sin almacenamiento */ }
 pintar();
+window.__cffListo = true;
 cargarEstadisticas();
 if (!S.perfil.inicio) bienvenida();
 else if (S.perfil.saludoDia !== hoy()) {

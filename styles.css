@@ -642,3 +642,15 @@ body.tapada #vista,body.tapada .tabs,body.tapada .fab,body.tapada .top,body.tapa
 .mis-retos .ver{display:block;margin-top:10px;font-size:13px;font-weight:700;color:var(--cyan)}
 .aviso-suave{margin:4px 0 6px;padding:12px 14px;border-radius:14px;background:var(--sutil);font-size:14px;line-height:1.45;color:var(--muted)}
 .vacio-suave{display:block}
+
+/* Resumen según la vista (Personal | Negocio | Todo) */
+.resumen-vista{border-left:4px solid var(--cyan)}
+.resumen-vista.negocio{border-left-color:var(--yellow)}
+.resumen-vista.todo{border-left-color:var(--green)}
+.rv-titulo{margin:0 0 10px;font-size:17px;font-weight:800}
+.rv-titulo small{font-size:12px;font-weight:600;color:var(--muted)}
+.rv-datos{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.rv-datos div{display:flex;flex-direction:column;gap:2px;min-width:0}
+.rv-datos span{font-size:11px;color:var(--muted)}
+.rv-datos b{font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.seccion h2 small{font-size:14px;font-weight:600;color:var(--muted)}
